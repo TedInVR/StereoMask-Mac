@@ -1,0 +1,6 @@
+{
+  "version": "2.0.10",
+  "page_url": "https://github.com/TedInVR/StereoMask-Mac",
+  "package_type": "source",
+  "notes": "R10 adds Help > Check for Updates. This download contains source code and build instructions; a prebuilt Mac app is not available yet."
+}

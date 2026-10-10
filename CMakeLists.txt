@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(StereoMask VERSION 2.0.9 LANGUAGES CXX)
+project(StereoMask VERSION 2.0.10 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC_COMPILER_PREDEFINES OFF)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Concurrent Network)
 
 if(WIN32 AND NOT OpenCV_DIR AND EXISTS "D:/vcpkg/installed/x64-mingw-dynamic/share/opencv4/OpenCVConfig.cmake")
     set(OpenCV_DIR "D:/vcpkg/installed/x64-mingw-dynamic/share/opencv4" CACHE PATH "OpenCV config directory")
@@ -30,6 +30,9 @@ endif()
 
 add_executable(StereoMask
     main.cpp
+    updatechecker.cpp
+    updatechecker.h
+    appversion.h
     smartselection.cpp
     smartselection.h
     mainwindow.cpp
@@ -47,11 +50,11 @@ if(WIN32)
     target_sources(StereoMask PRIVATE icon.rc)
 endif()
 if(APPLE)
-    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.stereomask.brush" MACOSX_BUNDLE_BUNDLE_NAME "StereoMask Mac" MACOSX_BUNDLE_SHORT_VERSION_STRING "2.0.9")
+    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.stereomask.brush" MACOSX_BUNDLE_BUNDLE_NAME "StereoMask Mac" MACOSX_BUNDLE_SHORT_VERSION_STRING "2.0.10")
 endif()
 target_include_directories(StereoMask PRIVATE ${OpenCV_INCLUDE_DIRS})
 
-target_link_libraries(StereoMask PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent ${OpenCV_LIBS})
+target_link_libraries(StereoMask PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent Qt6::Network ${OpenCV_LIBS})
 
 if(WIN32)
     set_target_properties(StereoMask PROPERTIES
@@ -92,14 +95,18 @@ if(STEREOMASK_BUILD_TESTS)
         stereoviewwidget.cpp stereoviewwidget.h stereoimageprocessor.cpp
         undocommand.cpp undocommand.h)
     target_include_directories(StereoMaskSmartTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${OpenCV_INCLUDE_DIRS})
-    target_link_libraries(StereoMaskSmartTest PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent ${OpenCV_LIBS})
+    target_link_libraries(StereoMaskSmartTest PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent Qt6::Network ${OpenCV_LIBS})
     add_test(NAME smart-selection COMMAND StereoMaskSmartTest)
     set_tests_properties(smart-selection PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-    add_executable(StereoMaskHelpTest tests/help_test.cpp mainwindow.cpp mainwindow.h
+    add_executable(StereoMaskHelpTest tests/help_test.cpp mainwindow.cpp mainwindow.h updatechecker.cpp updatechecker.h
         smartselection.cpp stereoviewwidget.cpp stereoviewwidget.h
         stereoimageprocessor.cpp undocommand.cpp undocommand.h resources.qrc)
     target_include_directories(StereoMaskHelpTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${OpenCV_INCLUDE_DIRS})
-    target_link_libraries(StereoMaskHelpTest PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent ${OpenCV_LIBS})
+    target_link_libraries(StereoMaskHelpTest PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent Qt6::Network ${OpenCV_LIBS})
     add_test(NAME user-guide COMMAND StereoMaskHelpTest)
     set_tests_properties(user-guide PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(StereoMaskUpdateTest tests/update_test.cpp updatechecker.cpp updatechecker.h)
+    target_include_directories(StereoMaskUpdateTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(StereoMaskUpdateTest PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME update-checker COMMAND StereoMaskUpdateTest)
 endif()

@@ -24,13 +24,15 @@ int main(int argc, char **argv) {
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
     QAction *guide = nullptr;
+    bool updates = false;
     for (QAction *menuAction : window.menuBar()->actions()) {
         if (menuAction->text() == "&Help") {
             for (QAction *action : menuAction->menu()->actions())
                 if (action->text().startsWith("User Guide")) guide = action;
+                else if (action->text().startsWith("Check for Updates")) updates = true;
         }
     }
-    if (!guide) { std::cerr << "Help menu lacks User Guide\n"; return 1; }
+    if (!guide || !updates) { std::cerr << "Help menu lacks User Guide\n"; return 1; }
     guide->trigger();
     QFile file(browser.url.toLocalFile());
     QFile bundled(":/docs/user-guide.html");

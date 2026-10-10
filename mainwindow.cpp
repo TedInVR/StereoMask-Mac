@@ -1,4 +1,6 @@
 #include <QComboBox>
+#include "updatechecker.h"
+#include "appversion.h"
 #include <QShortcut>
 #include "mainwindow.h"
 #include "stereoviewwidget.h"
@@ -144,7 +146,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R9</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R10</h1>"
                                      "<p align='center'><b>Original author:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
         text->setAlignment(Qt::AlignCenter);
@@ -167,6 +169,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     m_settings.load();
+    m_updateChecker = new UpdateChecker(this);
     m_exportWatcher = new QFutureWatcher<bool>(this);
     m_viewWidget = new StereoViewWidget(this);
     m_viewWidget->setMaskSettings(m_settings.maskColor, m_settings.opacity, m_settings.featherAmount);
@@ -179,6 +182,27 @@ MainWindow::MainWindow(QWidget *parent)
 
     createMenus();
     createToolbar();
+    connect(m_updateChecker, &UpdateChecker::finished, this, [this](bool newer, const UpdateInfo &info, const QString &error) {
+        m_checkUpdatesAction->setEnabled(true);
+        statusBar()->showMessage(error.isEmpty() ? tr("Update check finished") : tr("Update check failed"), 5000);
+        QString text;
+        if (!error.isEmpty()) text = error;
+        else if (newer) text = tr("A newer StereoMask Mac version is available.\n\nInstalled: %1\nAvailable: %2\n\n%3")
+            .arg(STEREOMASK_VERSION, info.version, info.notes);
+        else text = tr("You’re up to date.\n\nInstalled version: %1\nLatest published version: %2").arg(STEREOMASK_VERSION, info.version);
+        if (newer && info.packageType == "source") text += tr("\n\nThis is a source download that must be built on your Mac.");
+        QMessageBox dialog(error.isEmpty() ? QMessageBox::Information : QMessageBox::Warning,
+            tr("Check for Updates"), text, QMessageBox::NoButton, this);
+        dialog.setTextFormat(Qt::PlainText);
+        QPushButton *open = nullptr;
+        if (newer || !error.isEmpty()) open = dialog.addButton(tr("Open GitHub"), QMessageBox::AcceptRole);
+        dialog.addButton(tr("Close"), QMessageBox::RejectRole);
+        dialog.exec();
+        if (open && dialog.clickedButton() == open) {
+            const QUrl url = newer ? info.page : QUrl("https://github.com/TedInVR/StereoMask-Mac");
+            if (!QDesktopServices::openUrl(url)) QMessageBox::information(this, tr("Open GitHub"), tr("Open this address in your browser:\n%1").arg(url.toString()));
+        }
+    });
     statusBar()->showMessage(tr("Ready"));
 
     setWindowTitle(tr("StereoMask"));
@@ -244,6 +268,7 @@ void MainWindow::createMenus()
 
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("User Guide…"), this, &MainWindow::showHelp);
+    m_checkUpdatesAction = helpMenu->addAction(tr("Check for Updates…"), this, &MainWindow::checkForUpdates);
     helpMenu->addAction(tr("About StereoMask"), this, &MainWindow::showAbout);
 }
 
@@ -875,7 +900,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r9";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r10";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -892,10 +917,17 @@ void MainWindow::showHelp()
     }
 }
 
+void MainWindow::checkForUpdates()
+{
+    m_checkUpdatesAction->setEnabled(false);
+    statusBar()->showMessage(tr("Checking GitHub for updates…"));
+    m_updateChecker->check();
+}
+
 void MainWindow::showAbout()
 {
     QMessageBox::about(this, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R9</h2>"
+        tr("<h2>StereoMask Mac R10</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original author:</b> Subbiah Rathinagiri (S. Rathinagiri)</p><p><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p><p>A collaborative effort. Based on StereoMask 2.0.0; original MIT license preserved.</p>"
            "<p>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"

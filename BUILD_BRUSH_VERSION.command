@@ -22,7 +22,7 @@ unset DYLD_FRAMEWORK_PATH
 # Rewrite all Homebrew aliases to bundled libraries, then verify and ad-hoc sign.
 python3 scripts/repair_macos_bundle.py "$STEREOMASK_APP" 2>&1 | tee build-mac-brush/bundle-repair.log
 
-echo "Packaging verified. Starting StereoMask Mac R9…"
+echo "Packaging verified. Starting StereoMask Mac R10…"
 env -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
     "$STEREOMASK_APP/Contents/MacOS/StereoMask" > build-mac-brush/startup.log 2>&1 &
 STEREOMASK_PID=$!
