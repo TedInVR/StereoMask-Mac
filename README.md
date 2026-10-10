@@ -29,7 +29,7 @@ R10 is source code, not a prebuilt download. It targets Apple Silicon (arm64). I
 Install Xcode Command Line Tools and Homebrew, then the build dependencies:
 
 ```bash
-brew install cmake qtbase qtsvg opencv python
+brew install cmake qtbase qtsvg openssl@4 opencv python
 ```
 
 Download this repository with Code → Download ZIP and unpack into Downloads. Save and quit the older app, then run:

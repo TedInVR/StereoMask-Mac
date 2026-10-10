@@ -307,3 +307,7 @@ disconnected object of the same color. Mac app packaging remains user-tested.
 - Current updates.json publishes version 2.0.10 as source, with repository download page; no prebuilt/validated Mac binary claimed. Future maintainer workflow documented in README. Existing R9 installation cannot gain this menu until rebuilt once.
 - New test uses local HTTP fixture to check raw Accept header, newer/equal/older versions, malformed data, 404/403, oversized response and duplicate-check suppression. Validation rejects insecure/lookalike/wrong-repository URLs. Help-menu test requires update action alongside embedded guide.
 - Full Linux compile, existing selection tests, Help-menu/browser handoff test, update HTTP tests and seven packaging tests pass. R10 macOS runtime and actual GitHub HTTPS fetch still need user confirmation. R9 dependency repair retained; does not regress masking/selection code.
+
+### R10 packaging dependency repair — 2026-10-10
+
+The reported Mac build compiled successfully but deployment could not find OpenSSL 4 dylibs or QtSvg. The builder now installs missing OpenSSL 4 and QtSvg dependencies before compiling, verifies their files, and copies QtSvg into the app before macdeployqt discovers plugins. The README includes OpenSSL 4 explicitly. Shell syntax was checked; deployment and startup still require confirmation on the user's Mac.
