@@ -311,3 +311,7 @@ disconnected object of the same color. Mac app packaging remains user-tested.
 ### R10 packaging dependency repair — 2026-10-10
 
 The reported Mac build compiled successfully but deployment could not find OpenSSL 4 dylibs or QtSvg. The builder now installs missing OpenSSL 4 and QtSvg dependencies before compiling, verifies their files, and copies QtSvg into the app before macdeployqt discovers plugins. The README includes OpenSSL 4 explicitly. Shell syntax was checked; deployment and startup still require confirmation on the user's Mac.
+
+### R10 QtSvg discovery and final signing — 2026-10-10
+
+The next Mac log still reported unresolved QtSvg during plugin discovery and an invalid signature on a modified Brotli library. Add qtsvg to the executable's LC_RPATH before macdeployqt. Defer only its old-signature verification messages to the existing dependency repair and final strict codesign verification; all other deployment errors still stop the build. Shell syntax checked. Mac execution remains to be verified.
