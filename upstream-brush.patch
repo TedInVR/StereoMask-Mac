@@ -1,0 +1,331 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -21,7 +21,12 @@
+     set(Protobuf_PROTOC_EXECUTABLE "D:/vcpkg/installed/x64-mingw-dynamic/tools/protobuf/protoc.exe" CACHE FILEPATH "vcpkg protoc")
+ endif()
+ 
+-find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d)
++find_package(OpenCV REQUIRED COMPONENTS core imgproc)
++if(OpenCV_VERSION VERSION_GREATER_EQUAL "5")
++    find_package(OpenCV REQUIRED COMPONENTS core imgproc stereo)
++else()
++    find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d)
++endif()
+ 
+ add_executable(StereoMask
+     main.cpp
+@@ -34,8 +39,15 @@
+     undocommand.cpp
+     undocommand.h
+     resources.qrc
+-    icon.rc
+ )
++
++if(WIN32)
++    target_sources(StereoMask PRIVATE icon.rc)
++endif()
++if(APPLE)
++    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.stereomask.app" MACOSX_BUNDLE_BUNDLE_NAME "StereoMask" MACOSX_BUNDLE_SHORT_VERSION_STRING "2.0.0")
++endif()
++target_include_directories(StereoMask PRIVATE ${OpenCV_INCLUDE_DIRS})
+ 
+ target_link_libraries(StereoMask PRIVATE Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Concurrent ${OpenCV_LIBS})
+ 
+--- a/main.cpp
++++ b/main.cpp
+@@ -16,6 +16,7 @@
+     qDebug() << "------------------------------";
+ 
+     MainWindow w;
++    w.setWindowTitle("StereoMask Brush - Mac preview");
+     w.show();
+     return a.exec();
+ }
+--- a/mainwindow.cpp
++++ b/mainwindow.cpp
+@@ -1,3 +1,4 @@
++#include <QComboBox>
+ #include "mainwindow.h"
+ #include "stereoviewwidget.h"
+ #include <QMenuBar>
+@@ -630,6 +631,26 @@
+         autoMask->setEnabled(m_viewWidget->isImageLoaded() && isEmpty);
+     });
+ 
++    QToolBar *brushBar = addToolBar(tr("Reveal outside frame"));
++    brushBar->addWidget(new QLabel(tr("Outside frame: ")));
++    QComboBox *brushMode = new QComboBox;
++    brushMode->addItems({tr("Edit frame"), tr("Reveal brush"), tr("Erase reveal")});
++    brushBar->addWidget(brushMode);
++    brushBar->addWidget(new QLabel(tr(" Brush size (image pixels): ")));
++    QSpinBox *brushSize = new QSpinBox; brushSize->setRange(1, 1000); brushSize->setValue(40);
++    brushBar->addWidget(brushSize);
++    brushBar->addWidget(new QLabel(tr(" Export background: ")));
++    QComboBox *brushBackground = new QComboBox;
++    brushBackground->addItems({tr("Transparent (PNG)"), tr("Black"), tr("White")});
++    brushBar->addWidget(brushBackground);
++    connect(brushSize, QOverload<int>::of(&QSpinBox::valueChanged), m_viewWidget, &StereoViewWidget::setBrushSize);
++    connect(brushBackground, QOverload<int>::of(&QComboBox::activated), this, [this](int mode) { m_viewWidget->setCutoutBackground(mode); });
++    connect(brushMode, QOverload<int>::of(&QComboBox::activated), this, [this, anaglyph, pan, brushBackground](int mode) {
++        if (mode) { anaglyph->setChecked(false); pan->setChecked(false); m_viewWidget->setCutoutBackground(brushBackground->currentIndex()); }
++        m_viewWidget->setBrushMode(mode);
++        statusBar()->showMessage(mode ? tr("Paint each eye separately. Erase removes brush reveal only; the frame stays visible.") : tr("Edit frame points"));
++    });
++
+     QAction *freehand = addToolAction(maskBar, customIcon("freehand"), tr("Freehand"), tr("Draw a freehand mask when no mask points exist"));
+     freehand->setCheckable(true);
+     freehand->setEnabled(m_viewWidget->isImageLoaded() && m_viewWidget->canFreehandDraw());
+@@ -876,11 +897,19 @@
+         QColor bgColor = m_viewWidget->bgColor();
+         int interleavingSpace = m_viewWidget->interleavingSpace();
+         int featherAmount = m_viewWidget->featherAmount();
++        bool cutout = m_viewWidget->cutoutEnabled();
++        int cutoutBackground = m_viewWidget->cutoutBackground();
++        QImage revealLeft = m_viewWidget->revealMask(false), revealRight = m_viewWidget->revealMask(true);
++        if (cutout && cutoutBackground == 0 && !fileName.endsWith(".png", Qt::CaseInsensitive)) {
++            QMessageBox::information(this, tr("Transparent export"), tr("Choose a PNG filename to preserve transparency."));
++            return;
++        }
+         QPointer<MainWindow> self(this);
+ 
+         statusBar()->showMessage(tr("Please wait... Exporting (0%)"));
+         m_exportWatcher->setProperty("fileName", fileName);
+         m_exportWatcher->setFuture(QtConcurrent::run([=]() {
++            if (cutout) return StereoViewWidget::saveCutout(fileName, left, right, points, revealLeft, revealRight, cutoutBackground, padx, pady, interleavingSpace);
+             return StereoViewWidget::saveImageData(fileName, left, right, points, maskColor, opacity, padx, pady,
+                                                    bgColor, interleavingSpace, featherAmount,
+                                                    [self](int pct) {
+--- a/stereoviewwidget.cpp
++++ b/stereoviewwidget.cpp
+@@ -1,3 +1,5 @@
++#include <QBuffer>
++#include <QUndoCommand>
+ #include "stereoviewwidget.h"
+ #include "undocommand.h"
+ #include <QPainter>
+@@ -316,17 +318,86 @@
+ }
+ }
+ 
++
++namespace {
++class RevealStrokeCommand : public QUndoCommand {
++    StereoViewWidget *view; bool right; QImage before, after;
++public:
++    RevealStrokeCommand(StereoViewWidget *v, bool r, const QImage &b, const QImage &a)
++        : QUndoCommand("Paint outside frame"), view(v), right(r), before(b), after(a) {}
++    void undo() override { view->applyReveal(right, before); }
++    void redo() override { view->applyReveal(right, after); }
++};
++QString encodeReveal(const QImage &img) {
++    if (img.isNull()) return {};
++    QByteArray bytes; QBuffer buffer(&bytes); buffer.open(QIODevice::WriteOnly);
++    img.save(&buffer, "PNG"); return QString::fromLatin1(bytes.toBase64());
++}
++}
++void StereoViewWidget::applyReveal(bool right, const QImage &mask) {
++    (right ? m_revealRight : m_revealLeft) = mask;
++    update();
++    if (m_autoSave) saveProject();
++}
++QImage StereoViewWidget::cutoutEye(const QImage &image, const QVector<MaskPoint> &points, bool right, const QImage &reveal, int background) {
++    QImage alpha(image.size(), QImage::Format_ARGB32_Premultiplied);
++    alpha.fill(points.isEmpty() ? Qt::white : Qt::transparent);
++    QPainter ap(&alpha); ap.setRenderHint(QPainter::Antialiasing);
++    if (!points.isEmpty()) ap.fillPath(createImageMaskPath(points, QRectF(image.rect()), 1.0f, right, false), Qt::white);
++    if (!reveal.isNull()) ap.drawImage(0, 0, reveal);
++    ap.end();
++    QImage eye = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
++    QPainter ep(&eye); ep.setCompositionMode(QPainter::CompositionMode_DestinationIn);
++    ep.drawImage(0, 0, alpha); ep.end();
++    if (background != 0) {
++        QImage solid(image.size(), QImage::Format_ARGB32_Premultiplied);
++        solid.fill(background == 1 ? Qt::black : Qt::white);
++        QPainter sp(&solid); sp.drawImage(0, 0, eye); sp.end(); return solid;
++    }
++    return eye;
++}
++bool StereoViewWidget::saveCutout(const QString &file, const QImage &left, const QImage &right,
++ const QVector<MaskPoint> &points, const QImage &rl, const QImage &rr, int background, int px, int py, int gap) {
++    if (left.isNull() || right.isNull() || left.size() != right.size()) return false;
++    QImage result(2*left.width()+2*px+gap, left.height()+2*py, QImage::Format_ARGB32_Premultiplied);
++    if (result.isNull()) return false;
++    result.fill(background == 0 ? Qt::transparent : background == 1 ? Qt::black : Qt::white);
++    QPainter p(&result);
++    p.drawImage(px, py, cutoutEye(left, points, false, rl, background));
++    p.drawImage(px+left.width()+gap, py, cutoutEye(right, points, true, rr, background));
++    p.end(); return result.save(file);
++}
++void StereoViewWidget::brushAt(const QPoint &pos) {
++    QRect l,r; float scale; calculateLayout(l,r,scale);
++    bool right = m_brushRight;
++    QRect viewport = (right != m_swapSides) ? r : l;
++    if (!viewport.contains(pos)) { m_hasBrushPoint = false; return; }
++    QPointF ip = widgetToImage(pos, viewport, scale);
++    QImage &mask = right ? m_revealRight : m_revealLeft;
++    if (mask.isNull()) { mask=QImage(m_processor.leftImage().size(), QImage::Format_ARGB32_Premultiplied); mask.fill(Qt::transparent); }
++    QPainter p(&mask); p.setRenderHint(QPainter::Antialiasing);
++    p.setCompositionMode(m_brushMode==2 ? QPainter::CompositionMode_Clear : QPainter::CompositionMode_SourceOver);
++    p.setPen(QPen(Qt::white, m_brushSize, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
++    p.drawLine(m_hasBrushPoint ? m_lastBrushPoint : ip, ip);
++    p.setPen(Qt::NoPen); p.setBrush(Qt::white);
++    p.drawEllipse(ip, m_brushSize/2.0, m_brushSize/2.0);
++    p.end(); m_lastBrushPoint=ip; m_hasBrushPoint=true; update();
++}
++
+ bool StereoViewWidget::loadImage(const QString &fileName)
+ {
+     m_lastError = QString();
+     if (m_processor.loadSideBySide(fileName)) {
++        m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = false; m_brushMode = 0;
+         m_imagePath = fileName;
+         m_panOffset = QPointF(0, 0);
+         
+         QFileInfo info(fileName);
+         QString mskPath = info.absolutePath() + "/" + info.completeBaseName() + ".msk";
+         if (QFile::exists(mskPath)) {
+-            QFile file(mskPath);
++            if (m_cutout && QFile::exists(mskPath) && !QFile::exists(mskPath + ".pre-brush-backup"))
++        if (!QFile::copy(mskPath, mskPath + ".pre-brush-backup")) return false;
++    QFile file(mskPath);
+             if (file.open(QIODevice::ReadOnly)) {
+                 QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+                 if (!doc.isNull()) {
+@@ -384,6 +455,11 @@
+         pts.append(pObj);
+     }
+     QJsonObject obj; 
++    obj["brushVersion"] = 1;
++    obj["revealLeftPNG"] = encodeReveal(m_revealLeft);
++    obj["revealRightPNG"] = encodeReveal(m_revealRight);
++    obj["cutout"] = m_cutout;
++    obj["cutoutBackground"] = m_cutoutBackground;
+     obj["points"] = pts;
+     obj["imagePath"] = m_imagePath;
+     
+@@ -448,6 +524,12 @@
+         return false;
+     }
+ 
++    m_cutout = obj["cutout"].toBool();
++    m_cutoutBackground = qBound(0, obj["cutoutBackground"].toInt(), 2);
++    m_revealLeft = QImage::fromData(QByteArray::fromBase64(obj["revealLeftPNG"].toString().toLatin1()), "PNG");
++    m_revealRight = QImage::fromData(QByteArray::fromBase64(obj["revealRightPNG"].toString().toLatin1()), "PNG");
++    if (m_revealLeft.size() != m_processor.leftImage().size()) m_revealLeft = QImage();
++    if (m_revealRight.size() != m_processor.rightImage().size()) m_revealRight = QImage();
+     // Load project specific settings if they exist
+     if (obj.contains("maskColor")) m_maskColor = QColor(obj["maskColor"].toString());
+     if (obj.contains("maskOpacity")) m_maskOpacity = (float)obj["maskOpacity"].toDouble();
+@@ -1236,10 +1318,15 @@
+         float sw = img.width() * scale;
+         float sh = img.height() * scale;
+         QRectF target(v.center().x() - sw/2.0 + m_panOffset.x()*scale, v.center().y() - sh/2.0 + m_panOffset.y()*scale, sw, sh);
+-        painter.drawImage(target, img);
++        if (m_cutout && !m_anaglyphMode) {
++            for (int y=v.top(); y<=v.bottom(); y+=16)
++                for (int x=v.left(); x<=v.right(); x+=16)
++                    painter.fillRect(QRect(x,y,16,16), ((x-v.left())/16+(y-v.top())/16)%2 ? QColor(95,95,95) : QColor(65,65,65));
++            painter.drawImage(target, cutoutEye(img, m_points, isRight, revealMask(isRight), m_cutoutBackground));
++        } else painter.drawImage(target, img);
+         
+         if (!m_points.isEmpty()) {
+-            if (!m_anaglyphMode) {
++            if (!m_anaglyphMode && !m_cutout) {
+                 QRectF visible = target.intersected(QRectF(v));
+                 if (!visible.isEmpty()) {
+                     QRect visibleRect = visible.toAlignedRect();
+@@ -1267,7 +1354,7 @@
+                         painter.drawImage(visibleRect.topLeft(), maskImg);
+                     }
+                 }
+-            } else {
++            } else if (m_anaglyphMode) {
+                 QPainterPath path = createMaskPath(m_points, v, scale, isRight, false);
+                 painter.setPen(QPen(Qt::white, 1, Qt::DotLine));
+                 painter.drawPath(path);
+@@ -1305,7 +1392,17 @@
+     };
+ 
+     if (m_anaglyphMode) {
+-        drawInViewport(vL, m_processor.anaglyphImage(), false);
++        if (m_cutout) {
++            QImage l=cutoutEye(m_processor.leftImage(),m_points,false,m_revealLeft,m_cutoutBackground).convertToFormat(QImage::Format_RGB32);
++            QImage r=cutoutEye(m_processor.rightImage(),m_points,true,m_revealRight,m_cutoutBackground).convertToFormat(QImage::Format_RGB32);
++            if (m_swapSides) qSwap(l,r);
++            for (int y=0;y<l.height();++y) {
++                QRgb *lp=reinterpret_cast<QRgb*>(l.scanLine(y));
++                const QRgb *rp=reinterpret_cast<const QRgb*>(r.constScanLine(y));
++                for(int x=0;x<l.width();++x) lp[x]=qRgb(qRed(lp[x]),qGreen(rp[x]),qBlue(rp[x]));
++            }
++            drawInViewport(vL,l,false);
++        } else drawInViewport(vL, m_processor.anaglyphImage(), false);
+     } else {
+         drawInViewport(vL, m_swapSides ? m_processor.rightImage() : m_processor.leftImage(), m_swapSides);
+         drawInViewport(vR, m_swapSides ? m_processor.leftImage() : m_processor.rightImage(), !m_swapSides);
+@@ -1335,6 +1432,15 @@
+ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
+ {
+     if (!m_processor.isValid()) return;
++    if (m_brushMode && !m_anaglyphMode && event->button() == Qt::LeftButton) {
++        if (m_points.size() < 3) return;
++        QRect l,r; float scale; calculateLayout(l,r,scale);
++        if (!l.contains(event->pos()) && !r.contains(event->pos())) return;
++        m_brushRight = r.contains(event->pos()) ? !m_swapSides : m_swapSides;
++        m_beforeStroke = revealMask(m_brushRight);
++        m_cutout = true; m_brushing = true; m_hasBrushPoint = false;
++        brushAt(event->pos()); return;
++    }
+     m_lastMousePos = event->pos(); m_mouseDragStart = event->pos();
+     QRect vL, vR; float scale; calculateLayout(vL, vR, scale);
+ 
+@@ -1450,6 +1556,7 @@
+ 
+ void StereoViewWidget::mouseMoveEvent(QMouseEvent *event)
+ {
++    if (m_brushing) { brushAt(event->pos()); return; }
+     if (m_isFreehandDrawing) {
+         if (event->buttons() & Qt::LeftButton) {
+             appendFreehandPoint(event->pos());
+@@ -1558,6 +1665,11 @@
+ 
+ void StereoViewWidget::mouseReleaseEvent(QMouseEvent *event)
+ {
++    if (m_brushing && event->button() == Qt::LeftButton) {
++        brushAt(event->pos()); m_brushing=false;
++        m_undoStack->push(new RevealStrokeCommand(this, m_brushRight, m_beforeStroke, revealMask(m_brushRight)));
++        m_beforeStroke = QImage(); return;
++    }
+     if (m_isFreehandDrawing) {
+         if (event->button() == Qt::LeftButton) {
+             appendFreehandPoint(event->pos());
+--- a/stereoviewwidget.h
++++ b/stereoviewwidget.h
+@@ -18,6 +18,15 @@
+ public:
+     explicit StereoViewWidget(QWidget *parent = nullptr);
+ 
++    void setBrushMode(int mode) { m_brushMode = mode; m_panMode = false; m_freehandMode = false; update(); }
++    void setBrushSize(int size) { m_brushSize = size; }
++    void setCutoutBackground(int mode) { m_cutout = true; m_cutoutBackground = mode; update(); }
++    bool cutoutEnabled() const { return m_cutout; }
++    int cutoutBackground() const { return m_cutoutBackground; }
++    QImage revealMask(bool right) const { return right ? m_revealRight : m_revealLeft; }
++    void applyReveal(bool right, const QImage &mask);
++    static QImage cutoutEye(const QImage &image, const QVector<MaskPoint> &points, bool right, const QImage &reveal, int background);
++    static bool saveCutout(const QString &file, const QImage &left, const QImage &right, const QVector<MaskPoint> &points, const QImage &revealLeft, const QImage &revealRight, int background, int padx, int pady, int gap);
+     bool loadImage(const QString &fileName);
+     bool loadProject(const QString &fileName);
+     bool saveProject();
+@@ -110,6 +119,12 @@
+     void wheelEvent(QWheelEvent *event) override;
+ 
+ private:
++    void brushAt(const QPoint &pos);
++    int m_brushMode = 0, m_brushSize = 40, m_cutoutBackground = 0;
++    bool m_cutout = false, m_brushing = false, m_brushRight = false;
++    QImage m_revealLeft, m_revealRight, m_beforeStroke;
++    QPointF m_lastBrushPoint;
++    bool m_hasBrushPoint = false;
+     struct AutoMaskDebugFrame {
+         QRectF imageRect;
+         QVector<QPointF> imagePolygon;

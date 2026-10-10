@@ -1,0 +1,15 @@
+StereoMask Mac R9
+
+1. Apply and save your work in the older app, then quit it.
+2. Unzip this folder into Downloads.
+3. In Terminal paste only this line:
+
+bash "$HOME/Downloads/StereoMask-Brush-Mac-R9/BUILD_BRUSH_VERSION.command"
+
+Wait for the StereoMask Mac R9 window. Do not launch the app while packaging is running.
+Help > User Guide opens the offline guide in your web browser.
+The tool menu now says Editing Tool; use Select Brush or Erase Brush.
+After confirming startup and opening a project, copy the new app to Applications and test that copy.
+
+If the script stops, send its last error lines and bundle-repair.log/startup.log.
+Do not share a prebuilt app as a validated Mac release until these launch tests pass.
