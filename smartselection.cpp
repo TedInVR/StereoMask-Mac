@@ -4,6 +4,58 @@
 #include <QtMath>
 #include <exception>
 #include <vector>
+#include <algorithm>
+
+StereoPolygonMatch alignStereoPolygon(const QImage &source, const QImage &opposite,
+                                     const QVector<QPointF> &anchors, double fallbackShift) {
+    StereoPolygonMatch result;
+    if (source.isNull() || opposite.size()!=source.size()) return result;
+    QVector<double> shifts(anchors.size(),fallbackShift), reliable;
+    QVector<bool> matched(anchors.size(),false);
+    try {
+        const QImage a=source.convertToFormat(QImage::Format_Grayscale8);
+        const QImage b=opposite.convertToFormat(QImage::Format_Grayscale8);
+        cv::Mat from(a.height(),a.width(),CV_8UC1,const_cast<uchar *>(a.constBits()),a.bytesPerLine());
+        cv::Mat to(b.height(),b.width(),CV_8UC1,const_cast<uchar *>(b.constBits()),b.bytesPerLine());
+        const int radius=12, range=qMin(1024,qMax(48,a.width()/4));
+        // Reciprocal, unambiguous matches along epipolar rows; preserve vertical alignment.
+        auto match=[&](const cv::Mat &src,const cv::Mat &dst,QPoint point,double expected,int &x) {
+            const cv::Rect patch(point.x()-radius,point.y()-radius,2*radius+1,2*radius+1);
+            if (patch.x<0 || patch.y<0 || patch.x+patch.width>src.cols || patch.y+patch.height>src.rows) return false;
+            cv::Scalar mean,deviation; cv::meanStdDev(src(patch),mean,deviation);
+            if (deviation[0]<5) return false;
+            const int low=qMax(0,qRound(point.x()+expected)-range-radius);
+            const int high=qMin(dst.cols,qRound(point.x()+expected)+range+radius+1);
+            if (high-low<patch.width) return false;
+            cv::Mat scores;
+            cv::matchTemplate(dst(cv::Rect(low,patch.y,high-low,patch.height)),src(patch),scores,cv::TM_CCOEFF_NORMED);
+            double best; cv::Point location; cv::minMaxLoc(scores,nullptr,&best,nullptr,&location);
+            if (best<0.65) return false;
+            x=low+location.x+radius;
+            const int left=qMax(0,location.x-3),right=qMin(scores.cols,location.x+4);
+            scores.colRange(left,right).setTo(-1);
+            double competitor; cv::minMaxLoc(scores,nullptr,&competitor);
+            return best-competitor>=0.04;
+        };
+        for (int i=0; i<anchors.size(); ++i) {
+            const QPoint point=anchors[i].toPoint(); int targetX,backX;
+            if (!match(from,to,point,fallbackShift,targetX) ||
+                !match(to,from,QPoint(targetX,point.y()),-fallbackShift,backX) || std::abs(backX-point.x())>2) continue;
+            shifts[i]=targetX-point.x(); matched[i]=true; reliable.append(shifts[i]);
+        }
+    } catch (const cv::Exception &) {
+        reliable.clear(); matched.fill(false);
+    }
+    if (!reliable.isEmpty()) {
+        std::sort(reliable.begin(),reliable.end()); fallbackShift=reliable[reliable.size()/2];
+    }
+    for (int i=0; i<anchors.size(); ++i) {
+        if (matched[i]) ++result.matchedAnchors;
+        result.anchors.append(QPointF(qBound(0.0,anchors[i].x()+(matched[i] ? shifts[i] : fallbackShift),double(opposite.width()-1)),
+                                     qBound(0.0,anchors[i].y(),double(opposite.height()-1))));
+    }
+    return result;
+}
 
 SmartSelectionResult findSmartEdges(const QImage &image, const QRect &region,
                                   const QImage &hints, const QImage &roughReveal)
@@ -129,3 +181,4 @@ QVector<QPointF> magneticLassoPath(const QImage &image, const QPointF &start, co
     if(path.isEmpty() || i!=first) return {start,end};
     path.first()=start;path.last()=end;return path;
 }
+

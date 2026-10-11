@@ -1,6 +1,6 @@
 {
-  "version": "2.0.10",
+  "version": "2.1.1",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "R10 adds Help > Check for Updates. This download contains source code and build instructions; a prebuilt Mac app is not available yet."
+  "notes": "Mac R11 ports Subbiah Rathinagiri\u2019s Windows v2.1.1 selection objects, paired lasso, whole-polygon movement, previews and export improvements. Source download; build on your Mac."
 }

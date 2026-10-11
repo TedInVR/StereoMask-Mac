@@ -1,17 +1,22 @@
-StereoMask Mac R10
+StereoMask Mac R11 / 2.1.1
 
-1. Apply and save your work in the older app, then quit it.
-2. Unzip this folder into Downloads.
-3. In Terminal paste only this line:
+1. Keep source/build files in /Applications/StereoMask Development.
+2. Save your work and quit all StereoMask windows.
+3. Run BUILD_BRUSH_VERSION.command to build, verify, install and launch
+   /Applications/StereoMask.app. Use that same app/Dock icon every time.
+4. For future source updates, run UPDATE_STEREOMASK.command.
+   It uses temporary downloads and updates the same development folder.
 
-bash "$HOME/Downloads/StereoMask-Mac-main/BUILD_BRUSH_VERSION.command"
+New: Selections panel, individual polygon editing/reordering/visibility,
+whole-polygon movement, optional paired and Smart lassos, matching export
+previews, frame holes and updated Mac help.
 
-Wait for the StereoMask Mac R10 window. Do not launch the app while packaging is running.
-Help > User Guide opens the offline guide in your web browser.
-The tool menu now says Editing Tool; use Select Brush or Erase Brush.
-After confirming startup and opening a project, copy the new app to Applications and test that copy.
+Turn Preview Mask OFF to see the whole source while tracing.
+Choose Transparent (PNG) for a transparent export; new images default
+to Match preview, which uses mask color and opacity.
 
-If the script stops, send its last error lines and bundle-repair.log/startup.log.
-Do not share a prebuilt app as a validated Mac release until these launch tests pass.
+Help > User Guide explains the tools and Mac shortcuts.
+Help > Check for Updates checks the Mac repository; it does not install.
 
-Help > Check for Updates checks the latest version published on GitHub.
+Source release for Apple Silicon. This revision still needs actual Mac
+packaging, Finder launch and input verification before a binary release.

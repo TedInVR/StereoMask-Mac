@@ -6,11 +6,13 @@
 #include <QSaveFile>
 #include <QUndoCommand>
 #include "stereoviewwidget.h"
+#include <QDataStream>
 #include "undocommand.h"
 #include <QPainter>
 #include <QPaintEvent>
 #include <QMouseEvent>
 #include <QPainterPath>
+#include <QPainterPathStroker>
 #include <QDebug>
 #include <QWheelEvent>
 #include <QFile>
@@ -19,6 +21,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
+#include <QUuid>
 #include <QtMath>
 #include <algorithm>
 #include <limits>
@@ -187,8 +190,163 @@ struct CvAutoMaskResult {
     bool ok = false;
     float disparity = 0.0f;
     QVector<CvAutoMaskPoint> points;
+    QVector<QVector<QPointF>> debugTiles;
     QString method;
 };
+
+enum class RectDirection { Vertical, Horizontal };
+
+static cv::Rect largestRectInMask(const cv::Mat &mask)
+{
+    const int height = mask.rows;
+    const int width = mask.cols;
+    std::vector<int> heights(width, 0);
+    cv::Rect best;
+    int bestArea = 0;
+
+    for (int y = 0; y < height; ++y) {
+        const uchar *row = mask.ptr<uchar>(y);
+        for (int x = 0; x < width; ++x) {
+            heights[x] = row[x] ? heights[x] + 1 : 0;
+        }
+
+        std::stack<int> stack;
+        for (int x = 0; x <= width; ++x) {
+            int currentHeight = (x == width) ? 0 : heights[x];
+            while (!stack.empty() && heights[stack.top()] > currentHeight) {
+                int rectHeight = heights[stack.top()];
+                stack.pop();
+                int rectWidth = stack.empty() ? x : x - stack.top() - 1;
+                int area = rectWidth * rectHeight;
+                if (area > bestArea) {
+                    int left = stack.empty() ? 0 : stack.top() + 1;
+                    best = cv::Rect(left, y - rectHeight + 1, rectWidth, rectHeight);
+                    bestArea = area;
+                }
+            }
+            stack.push(x);
+        }
+    }
+
+    return best;
+}
+
+static cv::Rect largestRectConstrained(const cv::Mat &coverage, RectDirection direction)
+{
+    if (direction == RectDirection::Vertical) {
+        std::vector<cv::Point> points;
+        cv::findNonZero(coverage, points);
+        if (points.empty()) return {};
+        cv::Rect bounds = cv::boundingRect(points);
+        cv::Rect local = largestRectInMask(coverage(bounds));
+        if (local.area() <= 0) return {};
+        return cv::Rect(bounds.x + local.x, bounds.y + local.y, local.width, local.height);
+    }
+
+    cv::Mat transposed;
+    cv::transpose(coverage, transposed);
+    cv::Rect rect = largestRectInMask(transposed);
+    return cv::Rect(rect.y, rect.x, rect.height, rect.width);
+}
+
+static QVector<cv::Rect> decomposeMask(const cv::Mat &mask, int minArea, int maxIterations)
+{
+    cv::Mat coverage = mask.clone();
+    QVector<cv::Rect> tiles;
+    RectDirection direction = RectDirection::Vertical;
+
+    cv::Rect seed = largestRectInMask(coverage);
+    if (seed.area() < minArea) return tiles;
+    tiles.append(seed);
+    coverage(seed).setTo(0);
+
+    for (int i = 0; i < maxIterations; ++i) {
+        if (cv::countNonZero(coverage) == 0) break;
+
+        cv::Rect candidate = largestRectConstrained(coverage, direction);
+        if (candidate.area() < minArea) break;
+
+        bool collides = false;
+        for (const cv::Rect &tile : tiles) {
+            if ((candidate & tile).area() > 0) {
+                collides = true;
+                break;
+            }
+        }
+        if (collides) break;
+        if (candidate == cv::Rect(0, 0, mask.cols, mask.rows)) break;
+
+        tiles.append(candidate);
+        coverage(candidate).setTo(0);
+        direction = (direction == RectDirection::Vertical) ? RectDirection::Horizontal : RectDirection::Vertical;
+    }
+
+    return tiles;
+}
+
+static QVector<QVector<cv::Rect>> decomposeConnectedMasks(const cv::Mat &mask, int minArea, int maxIterations)
+{
+    cv::Mat labels;
+    int labelCount = cv::connectedComponents(mask, labels, 8, CV_32S);
+    QVector<QVector<cv::Rect>> allTiles;
+
+    for (int label = 1; label < labelCount; ++label) {
+        cv::Mat component = labels == label;
+        int area = cv::countNonZero(component);
+        if (area < minArea) continue;
+
+        QVector<cv::Rect> tiles = decomposeMask(component, minArea, maxIterations);
+        if (!tiles.isEmpty()) allTiles.append(tiles);
+    }
+
+    return allTiles;
+}
+
+static QVector<QPointF> assemblePolygonFromTiles(const QVector<QVector<cv::Rect>> &components, cv::Size imageSize, double scale, int maxPoints)
+{
+    cv::Mat canvas = cv::Mat::zeros(imageSize, CV_8U);
+    for (const QVector<cv::Rect> &tiles : components) {
+        for (const cv::Rect &tile : tiles) {
+            canvas(tile).setTo(255);
+        }
+    }
+    cv::dilate(canvas, canvas, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(canvas, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (contours.empty()) return {};
+
+    auto largest = std::max_element(contours.begin(), contours.end(), [](const auto &a, const auto &b) {
+        return cv::contourArea(a) < cv::contourArea(b);
+    });
+
+    std::vector<cv::Point> approx;
+    double epsilon = 2.0;
+    cv::approxPolyDP(*largest, approx, epsilon, true);
+    while ((int)approx.size() > maxPoints && epsilon < 80.0) {
+        epsilon *= 1.35;
+        cv::approxPolyDP(*largest, approx, epsilon, true);
+    }
+
+    QVector<QPointF> polygon;
+    polygon.reserve(static_cast<int>(approx.size()));
+    for (const cv::Point &point : approx) {
+        polygon.append(QPointF(point.x * scale, point.y * scale));
+    }
+    return polygon;
+}
+
+static QVector<QVector<QPointF>> scaleTilesForDebug(const QVector<QVector<cv::Rect>> &components, double scale)
+{
+    QVector<QVector<QPointF>> polygons;
+    for (const QVector<cv::Rect> &tiles : components) {
+        for (const cv::Rect &tile : tiles) {
+            QRectF rect(tile.x * scale, tile.y * scale, tile.width * scale, tile.height * scale);
+            polygons.append({rect.topLeft(), rect.bottomLeft(), rect.bottomRight(), rect.topRight()});
+        }
+    }
+    return polygons;
+}
 
 static cv::Mat qImageToBgrMat(const QImage &image)
 {
@@ -250,6 +408,25 @@ static float medianDisparityNear(const cv::Mat &disp, const QPointF &fullPoint, 
     return values[values.size() / 2] * scale;
 }
 
+static cv::Mat buildConsistencyMask(const cv::Mat &dispL, const cv::Mat &dispR, float threshold)
+{
+    cv::Mat mask = cv::Mat::zeros(dispL.rows, dispL.cols, CV_8U);
+    for (int y = 0; y < dispL.rows; ++y) {
+        const float *leftRow = dispL.ptr<float>(y);
+        uchar *maskRow = mask.ptr<uchar>(y);
+        for (int x = 0; x < dispL.cols; ++x) {
+            float disparity = leftRow[x];
+            int xr = x - qRound(disparity);
+            if (disparity > 0.0f && xr >= 0 && xr < dispL.cols &&
+                std::abs(disparity + dispR.at<float>(y, xr)) <= threshold) {
+                maskRow[x] = 1;
+            }
+        }
+    }
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
+    return mask;
+}
+
 static CvAutoMaskResult computeCvAutoMask(const QImage &leftImage, const QImage &rightImage)
 {
     const cv::Mat left = qImageToBgrMat(leftImage);
@@ -284,18 +461,76 @@ static CvAutoMaskResult computeCvAutoMask(const QImage &leftImage, const QImage 
     dispL16.convertTo(dispL, CV_32F, 1.0 / 16.0);
     dispR16.convertTo(dispR, CV_32F, 1.0 / 16.0);
 
-    cv::Mat validMask = cv::Mat::zeros(analysisH, analysisW, CV_8U);
-    for (int y = 0; y < analysisH; ++y) {
-        const float *dl = dispL.ptr<float>(y);
-        uchar *mr = validMask.ptr<uchar>(y);
-        for (int x = 0; x < analysisW; ++x) {
-            float d = dl[x];
-            int xr = qRound(x - d);
-            if (d > 0 && xr >= 0 && xr < analysisW && std::abs(d + dispR.at<float>(y, xr)) <= 1.75f) {
-                mr[x] = 1;
-            }
+    cv::Mat validMask = buildConsistencyMask(dispL, dispR, 1.5f);
+    cv::morphologyEx(validMask, validMask, cv::MORPH_CLOSE, cv::Mat::ones(9, 9, CV_8U));
+    cv::morphologyEx(validMask, validMask, cv::MORPH_OPEN, cv::Mat::ones(5, 5, CV_8U));
+
+    std::vector<float> valid;
+    for (int y = 0; y < dispL.rows; ++y) {
+        const float *row = dispL.ptr<float>(y);
+        for (int x = 0; x < dispL.cols; ++x) {
+            if (row[x] > 0) valid.push_back(row[x]);
         }
     }
+    float disparity = 0.0f;
+    if (!valid.empty()) {
+        std::nth_element(valid.begin(), valid.begin() + valid.size() / 2, valid.end());
+        disparity = valid[valid.size() / 2] * scale;
+    }
+
+    const int minArea = qMax(180, analysisW * analysisH / 700);
+    QVector<QVector<cv::Rect>> tileComponents = decomposeConnectedMasks(validMask, minArea, 50);
+    QVector<QPointF> polygon = assemblePolygonFromTiles(tileComponents, validMask.size(), scale, 32);
+    if (polygon.size() < 3) {
+        polygon = polygonFromMaskContour(validMask, scale, 28);
+    }
+
+    CvAutoMaskResult result;
+    result.ok = polygon.size() >= 3;
+    result.disparity = disparity;
+    result.debugTiles = scaleTilesForDebug(tileComponents, scale);
+    result.method = QStringLiteral("sgbm-rect-decompose");
+    for (const QPointF &point : polygon) {
+        result.points.append({point, medianDisparityNear(dispL, point, scale, disparity)});
+    }
+    return result;
+}
+
+static CvAutoMaskResult computeCvContourAutoMask(const QImage &leftImage, const QImage &rightImage)
+{
+    const cv::Mat left = qImageToBgrMat(leftImage);
+    const cv::Mat right = qImageToBgrMat(rightImage);
+
+    const int w = left.cols;
+    const int h = left.rows;
+    const int analysisW = std::min(720, w);
+    const int analysisH = std::max(1, qRound(h * (double)analysisW / w));
+    const double scale = (double)w / analysisW;
+
+    cv::Mat leftS;
+    cv::Mat rightS;
+    cv::resize(left, leftS, cv::Size(analysisW, analysisH), 0, 0, cv::INTER_AREA);
+    cv::resize(right, rightS, cv::Size(analysisW, analysisH), 0, 0, cv::INTER_AREA);
+
+    cv::Mat grayL;
+    cv::Mat grayR;
+    cv::cvtColor(leftS, grayL, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(rightS, grayR, cv::COLOR_BGR2GRAY);
+
+    int numDisp = std::max(16, ((analysisW / 5) / 16) * 16);
+    auto matcherL = cv::StereoSGBM::create(0, numDisp, 5, 8 * 5 * 5, 32 * 5 * 5, 1, 0, 8, 80, 24, cv::StereoSGBM::MODE_SGBM_3WAY);
+    auto matcherR = cv::StereoSGBM::create(-numDisp, numDisp, 5, 8 * 5 * 5, 32 * 5 * 5, 1, 0, 8, 80, 24, cv::StereoSGBM::MODE_SGBM_3WAY);
+
+    cv::Mat dispL16;
+    cv::Mat dispR16;
+    matcherL->compute(grayL, grayR, dispL16);
+    matcherR->compute(grayR, grayL, dispR16);
+    cv::Mat dispL;
+    cv::Mat dispR;
+    dispL16.convertTo(dispL, CV_32F, 1.0 / 16.0);
+    dispR16.convertTo(dispR, CV_32F, 1.0 / 16.0);
+
+    cv::Mat validMask = buildConsistencyMask(dispL, dispR, 1.75f);
     cv::morphologyEx(validMask, validMask, cv::MORPH_CLOSE, cv::Mat::ones(9, 9, CV_8U));
     cv::morphologyEx(validMask, validMask, cv::MORPH_OPEN, cv::Mat::ones(5, 5, CV_8U));
 
@@ -335,20 +570,22 @@ public:
     void redo() override { view->applySmartHints(right, after, afterRect); }
 };
 class RevealStrokeCommand : public QUndoCommand {
-    StereoViewWidget *view; bool right; QImage before, after;
+    StereoViewWidget *view; SelectionState before, after;
 public:
     RevealStrokeCommand(StereoViewWidget *v, bool r, const QImage &b, const QImage &a)
-        : QUndoCommand("Paint outside frame"), view(v), right(r), before(b), after(a) {}
-    void undo() override { view->applyReveal(right, before); }
-    void redo() override { view->applyReveal(right, after); }
+        : QUndoCommand("Paint outside frame"), view(v), before(v->selectionState()), after(v->stateWithRasterChange(r,b,a)) {}
+    void undo() override { view->restoreSelectionState(before); }
+    void redo() override { view->restoreSelectionState(after); }
 };
-class LassoSelectionCommand : public QUndoCommand {
-    StereoViewWidget *view; bool right; QImage before,after; QPainterPath beforePath,afterPath;
+class SelectionObjectsCommand : public QUndoCommand {
+    StereoViewWidget *view; SelectionState before, after;
 public:
-    LassoSelectionCommand(StereoViewWidget *v,bool r,const QImage &b,const QImage &a,const QPainterPath &bp,const QPainterPath &ap)
-        : QUndoCommand("Lasso selection"),view(v),right(r),before(b),after(a),beforePath(bp),afterPath(ap) {}
-    void undo() override { view->applyLassoSelection(right,before,beforePath); }
-    void redo() override { view->applyLassoSelection(right,after,afterPath); }
+    SelectionObjectsCommand(StereoViewWidget *v, const SelectionState &next, const QString &text)
+        : QUndoCommand(text), view(v), before(v->selectionState()), after(next) {}
+    SelectionObjectsCommand(StereoViewWidget *v, const SelectionState &previous, const SelectionState &next, const QString &text)
+        : QUndoCommand(text), view(v), before(previous), after(next) {}
+    void undo() override { view->restoreSelectionState(before); }
+    void redo() override { view->restoreSelectionState(after); }
 };
 QJsonObject encodeLassoPath(const QPainterPath &path) {
     QJsonArray polygons;
@@ -381,10 +618,248 @@ void StereoViewWidget::applyLassoSelection(bool right,const QImage &mask,const Q
     applyReveal(right,mask);
 }
 void StereoViewWidget::applyReveal(bool right, const QImage &mask) {
-    (right ? m_revealRight : m_revealLeft) = mask;
+    (right ? m_baseRevealRight : m_baseRevealLeft) = mask;
+    (right ? m_baseOutlineRight : m_baseOutlineLeft) = completedLasso(right);
+    for (int i=m_selectionObjects.size()-1; i>=0; --i)
+        if (m_selectionObjects[i].right==right) m_selectionObjects.removeAt(i);
+    rebuildSelectionMasks();
     ++m_smartRevision;
+    updateAnaglyphIfActive();
     update();
     if (m_autoSave) saveProject();
+}
+
+SelectionState StereoViewWidget::selectionState() const {
+    return {m_selectionObjects,m_baseRevealLeft,m_baseRevealRight,m_baseOutlineLeft,m_baseOutlineRight};
+}
+
+QImage StereoViewWidget::exportEye(bool right) const {
+    const QImage image=right ? m_processor.rightImage() : m_processor.leftImage();
+    QByteArray key;QDataStream stream(&key,QIODevice::WriteOnly);
+    stream<<image.cacheKey()<<m_smartRevision<<m_revealLeft.cacheKey()<<m_revealRight.cacheKey()
+          <<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
+    for (const auto &point:m_points)
+        stream<<point.pos<<point.disparity<<point.isCurve<<point.cp1<<point.cp2<<point.cp1Disparity<<point.cp2Disparity;
+    QByteArray &cachedKey=right ? m_exportKeyRight : m_exportKeyLeft;
+    QImage &cached=right ? m_exportCacheRight : m_exportCacheLeft;
+    if (cachedKey==key && !cached.isNull()) return cached;
+    const bool appearance=!m_cutout || m_cutoutBackground==4;
+    const QImage opening=openingMask(right,appearance && m_previewFeatherEnabled ? m_featherAmount : 0);
+    cached=appearance ? maskedPreviewEye(image,opening,m_maskColor,m_maskOpacity)
+                      : cutoutEye(image,m_points,right,opening,m_cutoutBackground,m_cutoutColor,true);
+    cachedKey=key;return cached;
+}
+QImage StereoViewWidget::openingMask(bool right, int feather) const {
+    const QImage source=right ? m_processor.rightImage() : m_processor.leftImage();
+    if (source.isNull()) return {};
+    QImage mask(source.size(),QImage::Format_ARGB32_Premultiplied);
+    mask.fill(m_points.isEmpty() ? Qt::white : Qt::transparent);
+    QPainter painter(&mask); painter.setRenderHint(QPainter::Antialiasing);
+    if (!m_points.isEmpty())
+        drawFeatheredPath(painter,createImageMaskPath(m_points,QRectF(source.rect()),1.0f,right,false),Qt::white,feather);
+    const QImage base=right ? m_baseRevealRight : m_baseRevealLeft;
+    if (!base.isNull()) painter.drawImage(0,0,base);
+    for (const auto &object:m_selectionObjects) {
+        if (!object.visible || object.right!=right) continue;
+        painter.setCompositionMode(object.subtract ? QPainter::CompositionMode_DestinationOut : QPainter::CompositionMode_SourceOver);
+        if (!object.raster.isNull()) painter.drawImage(0,0,object.raster);
+        else painter.fillPath(object.path,Qt::white);
+    }
+    painter.end(); return mask;
+}
+void StereoViewWidget::rebuildSelectionMasks() {
+    m_revealLeft=m_baseRevealLeft; m_revealRight=m_baseRevealRight;
+    m_completedLeft=m_baseOutlineLeft; m_completedRight=m_baseOutlineRight;
+    for (const auto &object:m_selectionObjects) {
+        if (!object.visible) continue;
+        QImage &mask=object.right ? m_revealRight : m_revealLeft;
+        QPainterPath &outline=object.right ? m_completedRight : m_completedLeft;
+        if (mask.isNull()) {
+            mask=QImage(m_processor.leftImage().size(),QImage::Format_ARGB32_Premultiplied);
+            mask.fill(Qt::transparent);
+        }
+        QPainter painter(&mask); painter.setRenderHint(QPainter::Antialiasing);
+        painter.setCompositionMode(object.subtract ? QPainter::CompositionMode_DestinationOut : QPainter::CompositionMode_SourceOver);
+        if (!object.raster.isNull()) painter.drawImage(0,0,object.raster);
+        else painter.fillPath(object.path,Qt::white);
+        painter.end();
+        if (!object.path.isEmpty()) outline=object.subtract ? outline.subtracted(object.path) : outline.united(object.path);
+    }
+    emit selectionObjectsChanged();
+}
+
+void StereoViewWidget::restoreSelectionState(const SelectionState &state) {
+    m_draggingPolygon=false;
+    cancelLasso();
+    m_selectionObjects=state.objects;
+    m_baseRevealLeft=state.baseLeft; m_baseRevealRight=state.baseRight;
+    m_baseOutlineLeft=state.outlineLeft; m_baseOutlineRight=state.outlineRight;
+    rebuildSelectionMasks(); ++m_smartRevision;
+    updateAnaglyphIfActive(); update();
+    if (m_autoSave) saveProject();
+}
+
+SelectionState StereoViewWidget::stateWithRasterChange(bool right,const QImage &before,const QImage &after) const {
+    SelectionState state=selectionState();
+    QImage add(m_processor.leftImage().size(),QImage::Format_ARGB32_Premultiplied);
+    QImage remove(add.size(),add.format()); add.fill(Qt::transparent); remove.fill(Qt::transparent);
+    bool hasAdd=false,hasRemove=false;
+    for (int y=0; y<add.height(); ++y) for (int x=0; x<add.width(); ++x) {
+        const int b=before.isNull() ? 0 : qAlpha(before.pixel(x,y));
+        const int a=after.isNull() ? 0 : qAlpha(after.pixel(x,y));
+        if (a>b) {
+            const int alpha=qRound(255.0*(a-b)/(255-b));
+            add.setPixel(x,y,qRgba(alpha,alpha,alpha,alpha)); hasAdd=true;
+        } else if (a<b) {
+            const int alpha=qRound(255.0*(b-a)/b);
+            remove.setPixel(x,y,qRgba(alpha,alpha,alpha,alpha)); hasRemove=true;
+        }
+    }
+    auto append=[&](const QImage &mask,bool subtract) {
+        SelectionObject object; object.id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+        object.name=tr("Brush %1").arg(state.objects.size()+1); object.right=right;
+        object.subtract=subtract; object.raster=mask; state.objects.append(object);
+    };
+    if (hasRemove) append(remove,true);
+    if (hasAdd) append(add,false);
+    return state;
+}
+
+void StereoViewWidget::setSelectionVisible(const QString &id,bool visible) {
+    if (m_refining) return;
+    if (hasLasso()) { emit smartStatus(tr("Apply or cancel the current outline before changing object visibility.")); return; }
+    auto state=selectionState();
+    for (auto &object:state.objects) if (object.id==id && object.visible!=visible) {
+        object.visible=visible;
+        m_undoStack->push(new SelectionObjectsCommand(this,state,tr("Selection visibility"))); return;
+    }
+}
+void StereoViewWidget::renameSelection(const QString &id,const QString &name) {
+    if (m_refining || name.trimmed().isEmpty()) return;
+    if (hasLasso()) { emit selectionObjectsChanged(); emit smartStatus(tr("Apply or cancel the current outline before renaming a selection.")); return; }
+    auto state=selectionState();
+    for (auto &object:state.objects) if (object.id==id && object.name!=name.trimmed()) {
+        object.name=name.trimmed().left(120);
+        m_undoStack->push(new SelectionObjectsCommand(this,state,tr("Rename selection"))); return;
+    }
+}
+void StereoViewWidget::deleteSelection(const QString &id) {
+    if (m_refining) return;
+    auto state=selectionState();
+    for (int i=0;i<state.objects.size();++i) if (state.objects[i].id==id) {
+        state.objects.removeAt(i);
+        m_undoStack->push(new SelectionObjectsCommand(this,state,tr("Delete selection"))); return;
+    }
+}
+void StereoViewWidget::setPolygonMoveEnabled(bool enabled) {
+    if (enabled && (hasLasso() || m_refining)) {
+        emit smartStatus(tr("Apply or cancel the current outline before moving an applied polygon."));
+        emit polygonMoveModeChanged(m_polygonMoveEnabled);return;
+    }
+    if (enabled==m_polygonMoveEnabled) return;
+    if (m_draggingPolygon) restoreSelectionState(m_beforePolygonDrag);
+    m_polygonMoveEnabled=enabled;
+    if (enabled) {m_panMode=false;m_freehandMode=false;m_pickingColor=false;}
+    setCursor(enabled ? Qt::SizeAllCursor : m_brushMode>=7 ? Qt::CrossCursor : Qt::ArrowCursor);
+    emit polygonMoveModeChanged(enabled);setFocus();update();
+}
+void StereoViewWidget::toggleSelectionOperation(const QString &id) {
+    if (m_refining) return;
+    if (hasLasso()) {
+        emit smartStatus(tr("Apply or cancel the current outline before switching an object's Add/Subtract mode.")); return;
+    }
+    auto state=selectionState();
+    for (auto &object:state.objects) if (object.id==id) {
+        object.subtract=!object.subtract;
+        m_undoStack->push(new SelectionObjectsCommand(this,state,tr("Switch selection Add/Subtract")));
+        return;
+    }
+}
+void StereoViewWidget::moveSelection(const QString &id, int offset) {
+    if (m_refining || offset == 0) return;
+    if (hasLasso()) { emit smartStatus(tr("Apply or cancel the current outline before reordering selections.")); return; }
+    auto state=selectionState();
+    for (int i=0; i<state.objects.size(); ++i) if (state.objects[i].id==id) {
+        const int destination=qBound(0,i+offset,state.objects.size()-1);
+        if (destination!=i) {
+            state.objects.move(i,destination);
+            m_undoStack->push(new SelectionObjectsCommand(this,state,tr("Reorder selections")));
+        }
+        return;
+    }
+}
+bool StereoViewWidget::editSelection(const QString &id) {
+    if (m_refining || hasLasso()) {
+        emit smartStatus(tr("Apply or cancel the current outline before editing another selection.")); return false;
+    }
+    for (const auto &object:m_selectionObjects) if (object.id==id) {
+        if (object.anchors.size()<3) {
+            emit smartStatus(tr("This raster selection can be hidden or deleted; its original control points are unavailable.")); return false;
+        }
+        setBrushMode(object.magnetic.contains(true) ? 8 : 7);
+        m_editingSelectionId=id; m_lassoRight=object.right; m_lassoSubtract=object.subtract;
+        m_lassoAnchors=object.anchors; m_lassoMagnetic=object.magnetic;
+        m_lassoSegments.resize(m_lassoAnchors.size()-1);
+        for (int i=0;i<m_lassoSegments.size();++i) rebuildLassoSegment(i);
+        m_lassoClosed=true; rebuildLassoClosing();
+        emit brushSettingsLoaded(m_brushMode,m_cutoutBackground);
+        emit lassoOperationChanged(m_lassoSubtract);
+        emit smartStatus(tr("Drag this selection's points, then Apply selection to save the changes.")); update(); return true;
+    }
+    return false;
+}
+
+QJsonObject StereoViewWidget::selectionObjectsJson() const {
+    QJsonArray objects;
+    for (const auto &object:m_selectionObjects) {
+        QJsonArray anchors,magnetic;
+        for (const auto &point:object.anchors) anchors.append(QJsonArray{point.x(),point.y()});
+        for (bool value:object.magnetic) magnetic.append(value);
+        objects.append(QJsonObject{{"id",object.id},{"name",object.name},{"right",object.right},
+            {"subtract",object.subtract},{"visible",object.visible},{"anchors",anchors},{"magnetic",magnetic},
+            {"path",encodeLassoPath(object.path)},{"rasterPNG",encodeReveal(object.raster)}});
+    }
+    return {{"version",1},{"objects",objects},{"baseLeftPNG",encodeReveal(m_baseRevealLeft)},
+        {"baseRightPNG",encodeReveal(m_baseRevealRight)},{"outlineLeft",encodeLassoPath(m_baseOutlineLeft)},
+        {"outlineRight",encodeLassoPath(m_baseOutlineRight)}};
+}
+
+void StereoViewWidget::loadSelectionObjects(const QJsonObject &project) {
+    m_selectionObjects.clear(); m_baseRevealLeft=QImage(); m_baseRevealRight=QImage();
+    m_baseOutlineLeft=QPainterPath(); m_baseOutlineRight=QPainterPath();
+    const auto data=project["selectionObjects"].toObject();
+    auto raster=[&](const QString &encoded) {
+        QImage image=QImage::fromData(QByteArray::fromBase64(encoded.toLatin1()),"PNG");
+        return image.size()==m_processor.leftImage().size() ? image.convertToFormat(QImage::Format_ARGB32_Premultiplied) : QImage();
+    };
+    if (data["version"].toInt()==1) {
+        m_baseRevealLeft=raster(data["baseLeftPNG"].toString());
+        m_baseRevealRight=raster(data["baseRightPNG"].toString());
+        m_baseOutlineLeft=decodeLassoPath(data["outlineLeft"].toObject());
+        m_baseOutlineRight=decodeLassoPath(data["outlineRight"].toObject());
+        for (const auto &value:data["objects"].toArray()) {
+            const auto json=value.toObject(); SelectionObject object;
+            object.id=json["id"].toString(); if (object.id.isEmpty()) object.id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+            object.name=json["name"].toString(); object.right=json["right"].toBool();
+            object.subtract=json["subtract"].toBool(); object.visible=json["visible"].toBool(true);
+            object.path=decodeLassoPath(json["path"].toObject()); object.raster=raster(json["rasterPNG"].toString());
+            for (const auto &point:json["anchors"].toArray()) {
+                const auto xy=point.toArray(); if (xy.size()==2) object.anchors.append(QPointF(xy[0].toDouble(),xy[1].toDouble()));
+            }
+            for (const auto &flag:json["magnetic"].toArray()) object.magnetic.append(flag.toBool());
+            object.magnetic.resize(qMax(0,object.anchors.size()-1));
+            m_selectionObjects.append(object);
+        }
+    } else {
+        for (bool right:{false,true}) {
+            const QImage mask=revealMask(right);
+            if (mask.isNull()) continue;
+            SelectionObject object; object.id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+            object.name=tr("Imported selection"); object.right=right; object.raster=mask;
+            object.path=completedLasso(right); m_selectionObjects.append(object);
+        }
+    }
+    rebuildSelectionMasks();
 }
 void StereoViewWidget::applySmartHints(bool right, const QImage &hints, const QRect &region) {
     (right ? m_smartHintsRight : m_smartHintsLeft) = hints;
@@ -433,13 +908,14 @@ void StereoViewWidget::findEdges() {
     });
     watcher->setFuture(QtConcurrent::run([source, region, hints, before] { return findSmartEdges(source, region, hints, before); }));
 }
-QImage StereoViewWidget::cutoutEye(const QImage &image, const QVector<MaskPoint> &points, bool right, const QImage &reveal, int background, const QColor &color) {
+QImage StereoViewWidget::cutoutEye(const QImage &image, const QVector<MaskPoint> &points, bool right, const QImage &reveal, int background, const QColor &color, bool completeOpening) {
     QImage alpha(image.size(), QImage::Format_ARGB32_Premultiplied);
     alpha.fill(points.isEmpty() ? Qt::white : Qt::transparent);
     QPainter ap(&alpha); ap.setRenderHint(QPainter::Antialiasing);
     if (!points.isEmpty()) ap.fillPath(createImageMaskPath(points, QRectF(image.rect()), 1.0f, right, false), Qt::white);
     if (!reveal.isNull()) ap.drawImage(0, 0, reveal);
     ap.end();
+    if (completeOpening) alpha=reveal;
     QImage eye = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     QPainter ep(&eye); ep.setCompositionMode(QPainter::CompositionMode_DestinationIn);
     ep.drawImage(0, 0, alpha); ep.end();
@@ -450,15 +926,37 @@ QImage StereoViewWidget::cutoutEye(const QImage &image, const QVector<MaskPoint>
     }
     return eye;
 }
+QImage StereoViewWidget::maskedPreviewEye(const QImage &image, const QImage &opening, const QColor &color, float opacity) {
+    if (image.isNull() || opening.size()!=image.size()) return {};
+    QImage overlay(image.size(),QImage::Format_ARGB32_Premultiplied);
+    if (overlay.isNull()) return {};
+    QColor fill=color; fill.setAlphaF(qBound(0.0f,opacity,1.0f)); overlay.fill(fill);
+    QPainter mask(&overlay); mask.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+    mask.drawImage(0,0,opening); mask.end();
+    QImage result=image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&result); painter.drawImage(0,0,overlay); painter.end();
+    return result;
+}
+bool StereoViewWidget::saveMaskedPreview(const QString &file, const QImage &left, const QImage &right,
+ const QImage &openingLeft, const QImage &openingRight, const QColor &color, float opacity, int px, int py, int gap, const QColor &paddingColor) {
+    if (left.isNull() || left.size()!=right.size() || px<0 || py<0 || gap<0) return false;
+    const QImage l=maskedPreviewEye(left,openingLeft,color,opacity),r=maskedPreviewEye(right,openingRight,color,opacity);
+    if (l.isNull() || r.isNull()) return false;
+    QImage result(2*left.width()+2*px+gap,left.height()+2*py,QImage::Format_ARGB32_Premultiplied);
+    if (result.isNull()) return false;
+    result.fill(paddingColor); QPainter painter(&result);
+    painter.drawImage(px,py,l);painter.drawImage(px+left.width()+gap,py,r);painter.end();
+    return result.save(file);
+}
 bool StereoViewWidget::saveCutout(const QString &file, const QImage &left, const QImage &right,
- const QVector<MaskPoint> &points, const QImage &rl, const QImage &rr, int background, int px, int py, int gap, const QColor &color) {
+ const QVector<MaskPoint> &points, const QImage &rl, const QImage &rr, int background, int px, int py, int gap, const QColor &color, bool completeOpening) {
     if (left.isNull() || right.isNull() || left.size() != right.size()) return false;
     QImage result(2*left.width()+2*px+gap, left.height()+2*py, QImage::Format_ARGB32_Premultiplied);
     if (result.isNull()) return false;
     result.fill(background == 0 ? QColor(Qt::transparent) : background == 1 ? QColor(Qt::black) : background == 2 ? QColor(Qt::white) : color);
     QPainter p(&result);
-    p.drawImage(px, py, cutoutEye(left, points, false, rl, background, color));
-    p.drawImage(px+left.width()+gap, py, cutoutEye(right, points, true, rr, background, color));
+    p.drawImage(px, py, cutoutEye(left, points, false, rl, background, color, completeOpening));
+    p.drawImage(px+left.width()+gap, py, cutoutEye(right, points, true, rr, background, color, completeOpening));
     p.end(); return result.save(file);
 }
 void StereoViewWidget::brushAt(const QPoint &pos) {
@@ -493,11 +991,12 @@ void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
     if (m_smartHintsRight.size()!=m_processor.rightImage().size()) m_smartHintsRight=QImage();
     m_smartRight=obj["smartActiveRight"].toBool(); ++m_smartRevision;
     m_cutout = obj["cutout"].toBool();
-    m_cutoutBackground = qBound(0, obj["cutoutBackground"].toInt(), 3);
+    m_cutoutBackground = qBound(0, obj["cutoutBackground"].toInt(4), 4);
     m_revealLeft = QImage::fromData(QByteArray::fromBase64(obj["revealLeftPNG"].toString().toLatin1()), "PNG");
     m_revealRight = QImage::fromData(QByteArray::fromBase64(obj["revealRightPNG"].toString().toLatin1()), "PNG");
     if (m_revealLeft.size() != m_processor.leftImage().size()) m_revealLeft = QImage();
     if (m_revealRight.size() != m_processor.rightImage().size()) m_revealRight = QImage();
+    loadSelectionObjects(obj);
     QColor color(obj["cutoutColor"].toString());
     m_cutoutColor = color.isValid() ? color : QColor(Qt::black);
     m_smartRegionLeft=QRect(); m_smartRegionRight=QRect();
@@ -512,9 +1011,12 @@ bool StereoViewWidget::loadImage(const QString &fileName)
     if (m_refining) { m_lastError=tr("Wait for Find edges to finish before opening another image."); return false; }
     cancelLasso();
     if (m_processor.loadSideBySide(fileName)) {
+        m_selectionObjects.clear(); m_baseRevealLeft=QImage(); m_baseRevealRight=QImage();
+        m_baseOutlineLeft=QPainterPath(); m_baseOutlineRight=QPainterPath();
+        emit selectionObjectsChanged();
         m_completedLeft=QPainterPath(); m_completedRight=QPainterPath(); m_lassoSubtract=false;
         m_smartHintsLeft=QImage(); m_smartHintsRight=QImage(); m_smartRegionLeft=QRect(); m_smartRegionRight=QRect(); m_smartRight=false; ++m_smartRevision;
-        m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = false; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 0; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
+        m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = false; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 4; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
         emit brushSettingsLoaded(0, 0);
         m_imagePath = fileName;
         m_panOffset = QPointF(0, 0);
@@ -581,7 +1083,8 @@ bool StereoViewWidget::saveProject()
         pts.append(pObj);
     }
     QJsonObject obj; 
-    obj["brushVersion"] = 4;
+    obj["selectionObjects"]=selectionObjectsJson();
+    obj["brushVersion"] = 5;
     obj["lassoOutlineLeft"]=encodeLassoPath(m_completedLeft);
     obj["lassoOutlineRight"]=encodeLassoPath(m_completedRight);
     obj["smartHintsLeftPNG"] = encodeReveal(m_smartHintsLeft);
@@ -694,6 +1197,8 @@ bool StereoViewWidget::loadProject(const QString &path)
     m_panOffset = QPointF(0, 0);
     notifySelectionState();
     notifyMaskState();
+    emit maskAppearanceChanged(m_maskColor,m_maskOpacity);
+    updateAnaglyphIfActive();
     update();
     return true;
 }
@@ -778,11 +1283,13 @@ void StereoViewWidget::setSwapSides(bool enabled) {
 void StereoViewWidget::updateAnaglyphIfActive()
 {
     if (m_anaglyphMode && m_processor.isValid()) {
-        m_processor.createAnaglyph(m_swapSides, &m_points, m_maskColor, m_maskOpacity);
+        const bool preview=m_maskPreviewEnabled || m_cleanPreviewEnabled;
+        m_processor.createAnaglyphFromEyes(preview ? exportEye(false) : m_processor.leftImage(),
+                                          preview ? exportEye(true) : m_processor.rightImage(),m_swapSides);
     }
 }
 
-void StereoViewWidget::setZoom(float zoom) { m_zoom = qBound(0.1f, zoom, 20.0f); update(); }
+void StereoViewWidget::setZoom(float zoom) { if (m_draggingPolygon) return; m_zoom = qBound(0.1f, zoom, 20.0f); update(); }
 
 bool StereoViewWidget::hasCurveSelection() const
 {
@@ -806,6 +1313,8 @@ void StereoViewWidget::notifyMaskState()
 
 void StereoViewWidget::setFreehandMode(bool enabled)
 {
+    if (m_refining) return;
+    if (enabled) setBrushMode(0);
     m_freehandMode = enabled && m_processor.isValid() && m_points.isEmpty();
     if (!m_freehandMode) {
         m_isFreehandDrawing = false;
@@ -921,6 +1430,11 @@ int StereoViewWidget::estimateGlobalDisparity() const
 
 bool StereoViewWidget::createAutoMaskPoints()
 {
+    return createAutoMaskPoints(AutoMaskRectDecompose);
+}
+
+bool StereoViewWidget::createAutoMaskPoints(AutoMaskMode mode)
+{
     if (!canAutoMask()) return false;
     if (m_autoMaskDebugTimer) m_autoMaskDebugTimer->stop();
     m_autoMaskDebugFrames.clear();
@@ -932,13 +1446,17 @@ bool StereoViewWidget::createAutoMaskPoints()
     const int ih = m_processor.leftImage().height();
     if (iw <= 1 || ih <= 1) return false;
 
-    CvAutoMaskResult cvMask;
-    try {
-        cvMask = computeCvAutoMask(m_processor.leftImage(), m_processor.rightImage());
-    } catch (const cv::Exception &e) {
-        qWarning() << "OpenCV auto mask failed:" << e.what();
-    }
-    if (cvMask.ok && cvMask.points.size() >= 3) {
+    if (mode == AutoMaskRectDecompose || mode == AutoMaskContour) {
+        CvAutoMaskResult cvMask;
+        try {
+            cvMask = (mode == AutoMaskRectDecompose)
+                ? computeCvAutoMask(m_processor.leftImage(), m_processor.rightImage())
+                : computeCvContourAutoMask(m_processor.leftImage(), m_processor.rightImage());
+        } catch (const cv::Exception &e) {
+            qWarning() << "OpenCV auto mask failed:" << e.what();
+        }
+        if (!cvMask.ok || cvMask.points.size() < 3) return false;
+
         const double border = qMax(4.0, qMin(iw, ih) * 0.015);
         auto clampBoth = [&](QPointF p, float pointDisparity) {
             double minX = qMax(border, border + pointDisparity);
@@ -962,13 +1480,15 @@ bool StereoViewWidget::createAutoMaskPoints()
         if (autoPoints.size() >= 3) {
             m_selectedIndices.clear();
             m_selectedPointIndex = -1;
-            m_undoStack->push(new InsertPointsCommand(this, indices, autoPoints, tr("OpenCV Auto Mask")));
+            m_undoStack->push(new InsertPointsCommand(this, indices, autoPoints,
+                                                      mode == AutoMaskRectDecompose ? tr("Rect Decompose Auto Mask") : tr("Contour Auto Mask")));
             if (m_autoSave) saveProject();
             notifySelectionState();
             notifyMaskState();
             update();
             return true;
         }
+        return false;
     }
 
     const int disparity = estimateGlobalDisparity();
@@ -1453,11 +1973,18 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
         float sw = img.width() * scale;
         float sh = img.height() * scale;
         QRectF target(v.center().x() - sw/2.0 + m_panOffset.x()*scale, v.center().y() - sh/2.0 + m_panOffset.y()*scale, sw, sh);
-        painter.drawImage(target, img);
-        // Editing always shows the source photo. A translucent green overlay
-        // identifies painted reveal strokes without obscuring the subject.
+        if (!m_anaglyphMode && (m_maskPreviewEnabled || m_cleanPreviewEnabled)) {
+            const QImage rendered=exportEye(isRight);
+            if (m_cutout && m_cutoutBackground==0) {
+                QPixmap checker(16,16);checker.fill(QColor(220,220,220));
+                QPainter tiles(&checker);tiles.fillRect(0,0,8,8,Qt::white);tiles.fillRect(8,8,8,8,Qt::white);tiles.end();
+                painter.fillRect(target,QBrush(checker));
+            }
+            painter.drawImage(target,rendered);
+        } else painter.drawImage(target,img);
+        if (m_cleanPreviewEnabled) { painter.restore(); return; }
         const QImage reveal = revealMask(isRight);
-        if (!m_anaglyphMode && !reveal.isNull()) {
+        if (!m_anaglyphMode && !m_maskPreviewEnabled && !reveal.isNull()) {
             QImage &tint = isRight ? m_revealTintRight : m_revealTintLeft;
             qint64 &key = isRight ? m_tintKeyRight : m_tintKeyLeft;
             if (key != reveal.cacheKey()) {
@@ -1488,6 +2015,12 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
             painter.setPen(QPen(Qt::black,3,Qt::DashLine));painter.drawPath(screen);
             painter.setPen(QPen(Qt::yellow,1,Qt::DashLine));painter.drawPath(screen);
         }
+        if (!m_anaglyphMode) for (const auto &object:m_selectionObjects) {
+            if (object.id!=m_activeSelectionId || object.right!=isRight || object.path.isEmpty()) continue;
+            const QPointF origin=imageToWidget(QPointF(),v,scale);
+            painter.setBrush(Qt::NoBrush); painter.setPen(QPen(Qt::cyan,2,Qt::DashLine));
+            painter.drawPath(QTransform(scale,0,0,scale,origin.x(),origin.y()).map(object.path));
+        }
         if (!m_anaglyphMode && isRight == m_lassoRight && !m_lassoAnchors.isEmpty()) {
             painter.setRenderHint(QPainter::Antialiasing);
             QPainterPath outline;
@@ -1517,35 +2050,7 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
         }
 
         if (!m_points.isEmpty()) {
-            if (!m_anaglyphMode && !m_cutout && !m_brushMode && !m_pickingColor) {
-                QRectF visible = target.intersected(QRectF(v));
-                if (!visible.isEmpty()) {
-                    QRect visibleRect = visible.toAlignedRect();
-                    QRectF localVisible = visible.translated(-target.topLeft());
-
-                    QImage maskImg(visibleRect.size(), QImage::Format_ARGB32);
-                    if (!maskImg.isNull()) {
-                        maskImg.fill(Qt::transparent);
-
-                        QPainter maskPainter(&maskImg);
-                        maskPainter.setRenderHint(QPainter::Antialiasing);
-
-                        QColor fill = m_maskColor;
-                        fill.setAlphaF(m_maskOpacity);
-                        maskPainter.fillRect(maskImg.rect(), fill);
-
-                        QPainterPath polyPath = createImageMaskPath(m_points, QRectF(0, 0, sw, sh), scale, isRight, false);
-
-                        maskPainter.translate(-localVisible.topLeft());
-                        maskPainter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
-                        int previewFeather = m_previewFeatherEnabled ? qRound(m_featherAmount * scale) : 0;
-                        drawFeatheredPath(maskPainter, polyPath, Qt::black, previewFeather);
-                        maskPainter.end();
-
-                        painter.drawImage(visibleRect.topLeft(), maskImg);
-                    }
-                }
-            } else if (m_anaglyphMode) {
+            if (m_anaglyphMode) {
                 QPainterPath path = createMaskPath(m_points, v, scale, isRight, false);
                 painter.setPen(QPen(Qt::white, 1, Qt::DotLine));
                 painter.drawPath(path);
@@ -1589,6 +2094,7 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
         drawInViewport(vR, m_swapSides ? m_processor.leftImage() : m_processor.rightImage(), !m_swapSides);
     }
 
+    if (m_cleanPreviewEnabled) return;
     drawAutoMaskDebugOverlay(painter, vL, scale, m_swapSides);
     if (!m_anaglyphMode) drawAutoMaskDebugOverlay(painter, vR, scale, !m_swapSides);
     
@@ -1629,6 +2135,7 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
         m_isPanning=true; m_lastMousePos=event->pos(); setCursor(Qt::ClosedHandCursor); return;
     }
     m_brushCursor = event->pos(); m_cursorVisible = true;
+    if (m_cleanPreviewEnabled) return;
     if (m_pickingColor && event->button() == Qt::LeftButton) {
         QRect l, r; float scale; calculateLayout(l, r, scale);
         if (m_anaglyphMode || (!l.contains(event->pos()) && !r.contains(event->pos()))) return;
@@ -1638,13 +2145,31 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
         const QPoint ip = widgetToImage(event->pos(), inRight ? r : l, scale).toPoint();
         if (!image.rect().contains(ip)) return;
         const QColor color = image.pixelColor(ip);
-        setCutoutColor(color);
+        setMaskColor(color);
         m_pickingColor = false;
         m_colorPickClick = true;
         setCursor(m_brushMode ? Qt::BlankCursor : Qt::ArrowCursor);
-        emit backgroundColorPicked(color); update(); return;
+        emit maskColorPicked(color); update(); return;
     }
     if (m_pickingColor) return;
+    if (m_polygonMoveEnabled && event->button()==Qt::LeftButton && !m_anaglyphMode) {
+        if (hasLasso()) {emit smartStatus(tr("Apply or cancel the current outline first."));return;}
+        QRect left,right;float scale;calculateLayout(left,right,scale);
+        if (!left.contains(event->pos()) && !right.contains(event->pos())) return;
+        const bool eye=right.contains(event->pos()) ? !m_swapSides : m_swapSides;
+        const QRect viewport=eye!=m_swapSides ? right : left;
+        const QPointF point=widgetToImage(event->pos(),viewport,scale);
+        for (const auto &object:m_selectionObjects) if (object.id==m_activeSelectionId) {
+            if (object.right!=eye || !object.visible || object.anchors.size()<3 || !object.raster.isNull()) return;
+            QPainterPathStroker stroke;stroke.setWidth(14.0/scale);
+            if (!object.path.contains(point) && !stroke.createStroke(object.path).contains(point)) return;
+            m_beforePolygonDrag=selectionState();m_draggedPolygonId=object.id;
+            m_polygonDragStart=point;m_polygonDragDelta=QPointF();
+            m_polygonDragViewport=viewport;m_polygonDragScale=scale;m_draggingPolygon=true;
+            setCursor(Qt::ClosedHandCursor);return;
+        }
+        emit smartStatus(tr("Select a visible polygon in Selections, then drag its interior or edge."));return;
+    }
     if (m_brushMode >= 7 && !m_anaglyphMode) {
         if (event->button() != Qt::LeftButton) return;
         QRect l,r; float scale; calculateLayout(l,r,scale);
@@ -1654,6 +2179,42 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
         const QPointF ip = widgetToImage(event->pos(), viewport, scale);
         const QImage source = right ? m_processor.rightImage() : m_processor.leftImage();
         if (!source.rect().contains(ip.toPoint())) return;
+        if (event->modifiers() & Qt::ControlModifier) {
+            int nearest=-1; double distance=8.0;
+            if (right==m_lassoRight) for (int i=0; i<m_lassoAnchors.size(); ++i) {
+                const double d=QLineF(imageToWidget(m_lassoAnchors[i],viewport,scale),QPointF(event->pos())).length();
+                if (d<distance) { nearest=i; distance=d; }
+            }
+            if (nearest>=0) removeLassoPoint(nearest);
+            else emit smartStatus(tr("Command-click directly on an outline point to remove it."));
+            return;
+        }
+        if ((event->modifiers() & Qt::ShiftModifier) && right==m_lassoRight && m_lassoAnchors.size()>=2) {
+            int edge=-1; double nearest=9.0; QPointF inserted;
+            const int edgeCount=m_lassoClosed ? m_lassoAnchors.size() : m_lassoAnchors.size()-1;
+            for (int i=0; i<edgeCount; ++i) {
+                const QVector<QPointF> trace=i<m_lassoSegments.size() ? m_lassoSegments[i] : m_lassoClosing;
+                for (int j=1; j<trace.size(); ++j) {
+                    const QPointF a=trace[j-1], delta=trace[j]-a;
+                    const double length2=QPointF::dotProduct(delta,delta);
+                    const double t=length2>0 ? qBound(0.0,QPointF::dotProduct(ip-a,delta)/length2,1.0) : 0;
+                    const QPointF point=a+t*delta;
+                    const double distance=QLineF(ip,point).length()*scale;
+                    if (distance<nearest) { nearest=distance; edge=i; inserted=point; }
+                }
+            }
+            if (edge>=0) {
+                const bool magnetic=edge<m_lassoMagnetic.size() ? m_lassoMagnetic[edge] : m_brushMode==8;
+                m_lassoAnchors.insert(edge+1,inserted);
+                m_lassoMagnetic.insert(edge,magnetic);
+                m_lassoSegments.resize(m_lassoAnchors.size()-1);
+                for (int i=0; i<m_lassoSegments.size(); ++i) rebuildLassoSegment(i);
+                if (m_lassoClosed) rebuildLassoClosing();
+                m_lassoDrag=edge+1; update();
+                emit smartStatus(tr("Point inserted. Drag to adjust, then Apply selection."));
+            } else emit smartStatus(tr("Shift-click near an outline edge to insert a point."));
+            return;
+        }
         bool nearAnchor=false;
         if (right==m_lassoRight) for (const auto &p:m_lassoAnchors)
             if (QLineF(imageToWidget(p,viewport,scale),QPointF(event->pos())).length()<=7) nearAnchor=true;
@@ -1676,7 +2237,7 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
             m_lassoMagnetic.append(m_brushMode==8);
             m_lassoSegments.append(QVector<QPointF>{}); rebuildLassoSegment(m_lassoSegments.size()-1);
         }
-        emit smartStatus(tr("Click along the outline. Delete removes the latest segment. Drag points to adjust. Enter closes; Apply selection commits."));
+        emit smartStatus(tr("Click along the outline. Shift-click an edge to insert; Ctrl-click a point to remove. Enter or C closes; Apply selection commits."));
         update(); return;
     }
     if (m_brushMode && !m_anaglyphMode && event->button() == Qt::LeftButton) {
@@ -1816,6 +2377,26 @@ void StereoViewWidget::mouseMoveEvent(QMouseEvent *event)
 {
     m_brushCursor = event->pos(); m_cursorVisible = true;
     if (m_refining) return;
+    if (m_draggingPolygon && ((event->buttons() & Qt::LeftButton) || event->type()==QEvent::MouseButtonRelease)) {
+        QPointF delta=widgetToImage(event->pos(),m_polygonDragViewport,m_polygonDragScale)-m_polygonDragStart;
+        if (event->modifiers() & Qt::ShiftModifier) delta.setY(0);
+        for (const auto &original:m_beforePolygonDrag.objects) if (original.id==m_draggedPolygonId) {
+            const QRectF bounds=original.path.boundingRect();
+            const QImage image=original.right ? m_processor.rightImage() : m_processor.leftImage();
+            const double minX=-bounds.left(),maxX=image.width()-1-bounds.right();
+            const double minY=-bounds.top(),maxY=image.height()-1-bounds.bottom();
+            delta.setX(minX<=maxX ? qBound(minX,delta.x(),maxX) : 0);
+            delta.setY(minY<=maxY ? qBound(minY,delta.y(),maxY) : 0);
+            for (auto &object:m_selectionObjects) if (object.id==m_draggedPolygonId) {
+                object=original;object.path=QTransform::fromTranslate(delta.x(),delta.y()).map(original.path);
+                for (auto &point:object.anchors) point+=delta;
+                break;
+            }
+            m_polygonDragDelta=delta;++m_smartRevision;rebuildSelectionMasks();update();return;
+        }
+        return;
+    }
+    if (m_polygonMoveEnabled && !m_isPanning) {setCursor(Qt::SizeAllCursor);update();return;}
     if (m_isPanning) {
         QRect l,r; float scale; calculateLayout(l,r,scale);
         const QPoint delta=event->pos()-m_lastMousePos;
@@ -1959,6 +2540,15 @@ void StereoViewWidget::mouseMoveEvent(QMouseEvent *event)
 
 void StereoViewWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_draggingPolygon && event->button()==Qt::LeftButton) {
+        mouseMoveEvent(event);
+        const auto before=m_beforePolygonDrag,after=selectionState();
+        m_draggingPolygon=false;setCursor(Qt::SizeAllCursor);
+        if (!m_polygonDragDelta.isNull())
+            m_undoStack->push(new SelectionObjectsCommand(this,before,after,tr("Move polygon")));
+        m_beforePolygonDrag=SelectionState{};
+        update();return;
+    }
     if (m_isPanning) {
         m_isPanning=false;
         setCursor(m_spacePan || m_panMode ? Qt::OpenHandCursor : m_brushMode >= 7 ? Qt::CrossCursor : m_brushMode ? Qt::BlankCursor : Qt::ArrowCursor);
@@ -2026,6 +2616,7 @@ void StereoViewWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void StereoViewWidget::wheelEvent(QWheelEvent *event) 
 { 
+    if (m_draggingPolygon) {event->accept();return;}
     QRect vL, vR; float oldScale; calculateLayout(vL, vR, oldScale);
     QPoint pos = event->position().toPoint();
     QRect targetV = vL.contains(pos) ? vL : (vR.contains(pos) ? vR : QRect());
@@ -2093,11 +2684,41 @@ void StereoViewWidget::leaveEvent(QEvent *event) {
     m_cursorVisible = false; update(); QWidget::leaveEvent(event);
 }
 void StereoViewWidget::keyPressEvent(QKeyEvent *event) {
+    if (m_draggingPolygon && event->key()==Qt::Key_Escape) {
+        restoreSelectionState(m_beforePolygonDrag);m_beforePolygonDrag=SelectionState{};setCursor(Qt::SizeAllCursor);event->accept();return;
+    }
+    if (m_processor.isValid() && !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        QPointF direction;
+        switch (event->key()) {
+        case Qt::Key_Left: direction=QPointF(1,0); break;
+        case Qt::Key_Right: direction=QPointF(-1,0); break;
+        case Qt::Key_Up: direction=QPointF(0,1); break;
+        case Qt::Key_Down: direction=QPointF(0,-1); break;
+        default: break;
+        }
+        if (!direction.isNull()) {
+            if (!m_brushing && !m_isFreehandDrawing && m_lassoDrag<0 && !m_isPanning && !m_draggingPolygon) {
+                QRect left,right; float scale; calculateLayout(left,right,scale);
+                const double step=event->modifiers() & Qt::ShiftModifier ? 144.0 : 48.0;
+                if (scale>0) m_panOffset+=direction*(step/scale);
+                update();
+            }
+            event->accept(); return;
+        }
+    }
     if (event->key()==Qt::Key_Space && !event->isAutoRepeat()) { m_spacePan=true; setCursor(Qt::OpenHandCursor); event->accept(); return; }
     if (m_brushMode >= 7 && !m_pickingColor) {
+        if ((event->key()==Qt::Key_Return || event->key()==Qt::Key_Enter) &&
+            (event->modifiers() & Qt::ControlModifier) &&
+            !(event->modifiers() & (Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier))) {
+            finishLasso(); event->accept(); return;
+        }
         if (event->key()==Qt::Key_Delete || event->key()==Qt::Key_Backspace) { removeLassoSegment(); event->accept(); return; }
         if (event->key()==Qt::Key_Escape) { cancelUnfinishedLasso(); event->accept(); return; }
-        if (event->key()==Qt::Key_Return || event->key()==Qt::Key_Enter) { closeLasso(); event->accept(); return; }
+        if (!(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier)) &&
+            (event->key()==Qt::Key_Return || event->key()==Qt::Key_Enter || event->key()==Qt::Key_C)) {
+            closeLasso(); event->accept(); return;
+        }
     }
     if (m_pickingColor && event->key() == Qt::Key_Escape) {
         m_pickingColor = false;
@@ -2120,8 +2741,29 @@ void StereoViewWidget::rebuildLassoClosing() {
         : QVector<QPointF>{m_lassoAnchors.last(),m_lassoAnchors.first()};
 }
 void StereoViewWidget::cancelLasso() {
+    m_editingSelectionId.clear();
     m_lassoAnchors.clear(); m_lassoSegments.clear(); m_lassoMagnetic.clear(); m_lassoClosing.clear();
     m_lassoClosed=false; m_lassoDrag=-1; update();
+}
+void StereoViewWidget::removeLassoPoint(int index) {
+    if (m_refining || index<0 || index>=m_lassoAnchors.size()) return;
+    if (m_lassoClosed && m_lassoAnchors.size()<=3) {
+        emit smartStatus(tr("A closed polygon needs at least three points.")); return;
+    }
+    m_lassoDrag=-1;
+    const int last=m_lassoAnchors.size()-1;
+    if (index==0 && !m_lassoMagnetic.isEmpty()) m_lassoMagnetic.removeFirst();
+    else if (index==last && !m_lassoMagnetic.isEmpty()) m_lassoMagnetic.removeLast();
+    else if (index>0 && index<last) {
+        m_lassoMagnetic[index-1]=m_lassoMagnetic[index-1] || m_lassoMagnetic[index];
+        m_lassoMagnetic.removeAt(index);
+    }
+    m_lassoAnchors.removeAt(index);
+    m_lassoSegments.resize(qMax(0,m_lassoAnchors.size()-1));
+    for (int i=0; i<m_lassoSegments.size(); ++i) rebuildLassoSegment(i);
+    if (m_lassoClosed) rebuildLassoClosing();
+    else m_lassoClosing.clear();
+    update(); emit smartStatus(tr("Point removed; neighboring edges reconnected. Apply selection to save the change."));
 }
 void StereoViewWidget::removeLassoSegment() {
     if (m_lassoAnchors.isEmpty()) return;
@@ -2142,17 +2784,45 @@ void StereoViewWidget::applyLasso(bool erase) {
     for (const auto &segment:m_lassoSegments) for (const auto &p:segment) path.lineTo(p);
     for (const auto &p:m_lassoClosing) path.lineTo(p);
     path.closeSubpath();
-    const QImage before=revealMask(m_lassoRight);
-    QImage after=before;
-    if (after.isNull()) { after=QImage((m_lassoRight ? m_processor.rightImage() : m_processor.leftImage()).size(),QImage::Format_ARGB32_Premultiplied); after.fill(Qt::transparent); }
-    QPainter p(&after);
-    if (erase) p.setCompositionMode(QPainter::CompositionMode_Clear);
-    p.setRenderHint(QPainter::Antialiasing); p.fillPath(path,Qt::white); p.end();
     m_cutout=true;
-    const QPainterPath beforeOutline=completedLasso(m_lassoRight);
-    const QPainterPath afterOutline=erase ? beforeOutline.subtracted(path) : beforeOutline.united(path);
-    m_undoStack->push(new LassoSelectionCommand(this,m_lassoRight,before,after,beforeOutline,afterOutline));
-    cancelLasso(); setFocus(); emit smartStatus(erase ? tr("Lasso area erased from painted reveal. The frame stays open. Undo restores it.") : tr("Lasso area preserved. Undo restores the previous reveal. Draw the corresponding outline in the other eye."));
+    auto state=selectionState();
+    SelectionObject object;
+    object.id=m_editingSelectionId.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : m_editingSelectionId;
+    object.name=tr("Polygon %1").arg(state.objects.size()+1);
+    object.right=m_lassoRight; object.subtract=erase; object.path=path;
+    object.anchors=m_lassoAnchors; object.magnetic=m_lassoMagnetic;
+    bool replaced=false;
+    for (auto &existing:state.objects) if (existing.id==object.id) {
+        object.name=existing.name; object.visible=existing.visible; existing=object; replaced=true; break;
+    }
+    int matchedAnchors=0;
+    const bool paired=!replaced && m_pairedLassoEnabled;
+    if (!replaced) state.objects.append(object);
+    if (paired) {
+        QVector<float> disparities;
+        for (const auto &point:m_points) disparities.append(point.disparity);
+        std::sort(disparities.begin(),disparities.end());
+        const double disparity=disparities.isEmpty() ? 0 : disparities[disparities.size()/2];
+        const QImage source=object.right ? m_processor.rightImage() : m_processor.leftImage();
+        const QImage opposite=object.right ? m_processor.leftImage() : m_processor.rightImage();
+        const auto alignment=alignStereoPolygon(source,opposite,object.anchors,object.right ? disparity : -disparity);
+        SelectionObject copy=object;
+        copy.id=QUuid::createUuid().toString(QUuid::WithoutBraces); copy.right=!object.right;
+        copy.name=tr("Polygon %1").arg(state.objects.size()+1); copy.anchors=alignment.anchors;
+        matchedAnchors=alignment.matchedAnchors;
+        copy.path=QPainterPath(); copy.path.moveTo(copy.anchors.first());
+        for (int i=0; i<copy.anchors.size(); ++i) {
+            const QPointF a=copy.anchors[i],b=copy.anchors[(i+1)%copy.anchors.size()];
+            const bool magnetic=i<copy.magnetic.size() ? copy.magnetic[i] : m_brushMode==8;
+            if (magnetic) for (const auto &point:magneticLassoPath(opposite,a,b)) copy.path.lineTo(point);
+            else copy.path.lineTo(b);
+        }
+        copy.path.closeSubpath(); state.objects.append(copy);
+    }
+    m_undoStack->push(new SelectionObjectsCommand(this,state,replaced ? tr("Edit polygon selection") : paired ? tr("Add paired polygon selections") : tr("Add polygon selection")));
+    cancelLasso(); setFocus();
+    emit smartStatus(paired ? tr("Two independent polygons created (%1/%2 anchors matched). Check the opposite eye and adjust with Edit points.").arg(matchedAnchors).arg(object.anchors.size())
+                            : erase ? tr("Lasso subtraction applied to the ordered mask. Undo restores it.") : tr("Lasso area preserved. Undo restores it."));
 }
 
 void StereoViewWidget::keyReleaseEvent(QKeyEvent *event) {
@@ -2166,9 +2836,7 @@ void StereoViewWidget::keyReleaseEvent(QKeyEvent *event) {
 void StereoViewWidget::clearPaintedReveal() {
     if (m_refining) return;
     cancelLasso();
-    m_undoStack->beginMacro(tr("Clear painted reveal"));
-    if (!m_revealLeft.isNull() || !m_completedLeft.isEmpty()) m_undoStack->push(new LassoSelectionCommand(this,false,m_revealLeft,QImage(),m_completedLeft,QPainterPath()));
-    if (!m_revealRight.isNull() || !m_completedRight.isEmpty()) m_undoStack->push(new LassoSelectionCommand(this,true,m_revealRight,QImage(),m_completedRight,QPainterPath()));
-    m_undoStack->endMacro();
+    m_undoStack->push(new SelectionObjectsCommand(this,SelectionState{},tr("Clear painted reveal")));
     emit smartStatus(tr("Painted reveal cleared in both eyes; your frame stays open. Undo restores the paint."));
 }
+

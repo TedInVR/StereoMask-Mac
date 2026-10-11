@@ -15,4 +15,12 @@ SmartSelectionResult findSmartEdges(const QImage &image, const QRect &region,
 #include <QPointF>
 QVector<QPointF> magneticLassoPath(const QImage &image, const QPointF &start, const QPointF &end);
 
+struct StereoPolygonMatch {
+    QVector<QPointF> anchors;
+    int matchedAnchors = 0;
+};
+StereoPolygonMatch alignStereoPolygon(const QImage &source, const QImage &opposite,
+                                     const QVector<QPointF> &anchors, double fallbackShift);
+
 #endif
+

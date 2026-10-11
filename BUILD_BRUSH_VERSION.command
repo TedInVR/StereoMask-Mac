@@ -3,12 +3,18 @@ set -euo pipefail
 trap 'echo; echo "Build stopped. Send the last error lines to ChatGPT."; read -r -p "Press Return to close." || true' ERR
 cd "$(dirname "$0")"
 export PATH="/opt/homebrew/bin:$PATH"
+if /bin/ps -axo comm= | /usr/bin/grep -Eq '/Contents/MacOS/StereoMask$'; then
+    echo "Save your project and quit all StereoMask windows before building/installing."
+    exit 1
+fi
 # Qt plugins need these at deployment time, even when compilation succeeds.
 if [ ! -f /opt/homebrew/opt/openssl@4/lib/libssl.4.dylib ] ||    [ ! -f /opt/homebrew/opt/openssl@4/lib/libcrypto.4.dylib ]; then
     brew install openssl@4
+    brew link openssl@4
 fi
 if [ ! -f /opt/homebrew/opt/qtsvg/lib/QtSvg.framework/Versions/A/QtSvg ]; then
     brew install qtsvg
+    brew link qtsvg
 fi
 for STEREOMASK_REQUIRED in     /opt/homebrew/opt/openssl@4/lib/libssl.4.dylib     /opt/homebrew/opt/openssl@4/lib/libcrypto.4.dylib     /opt/homebrew/opt/qtsvg/lib/QtSvg.framework/Versions/A/QtSvg; do
     if [ ! -f "$STEREOMASK_REQUIRED" ]; then
@@ -19,7 +25,7 @@ for STEREOMASK_REQUIRED in     /opt/homebrew/opt/openssl@4/lib/libssl.4.dylib   
 done
 STEREOMASK_SDK="$(xcrun --show-sdk-path)"
 test -f "$STEREOMASK_SDK/usr/include/c++/v1/type_traits"
-cmake -S . -B build-mac-brush -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT="$STEREOMASK_SDK" -DCMAKE_CXX_FLAGS="-isystem $STEREOMASK_SDK/usr/include/c++/v1" -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qtbase;/opt/homebrew/opt/opencv"
+cmake --fresh -S . -B build-mac-brush -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT="$STEREOMASK_SDK" -DCMAKE_CXX_FLAGS="-isystem $STEREOMASK_SDK/usr/include/c++/v1" -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/qtbase;/opt/homebrew/opt/opencv"
 STEREOMASK_APP="$PWD/build-mac-brush/StereoMask.app"
 # Restore the actual binary before rebuilding/redeploying a previous R2 build.
 if [ -f "$STEREOMASK_APP/Contents/MacOS/StereoMask-bin" ]; then
@@ -57,7 +63,9 @@ unset DYLD_FRAMEWORK_PATH
 # Rewrite all Homebrew aliases to bundled libraries, then verify and ad-hoc sign.
 python3 scripts/repair_macos_bundle.py "$STEREOMASK_APP" 2>&1 | tee build-mac-brush/bundle-repair.log
 
-echo "Packaging verified. Starting StereoMask Mac R10…"
+python3 scripts/install_macos_app.py "$STEREOMASK_APP" /Applications/StereoMask.app
+STEREOMASK_APP="/Applications/StereoMask.app"
+echo "Packaging verified. Starting the permanent StereoMask Mac R11…"
 env -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
     "$STEREOMASK_APP/Contents/MacOS/StereoMask" > build-mac-brush/startup.log 2>&1 &
 STEREOMASK_PID=$!
@@ -69,5 +77,5 @@ if ! kill -0 "$STEREOMASK_PID" 2>/dev/null; then
 fi
 open -R "$STEREOMASK_APP"
 echo "App is running. Help > User Guide opens the guide in your browser."
-echo "After testing, copy StereoMask.app into Applications."
+echo "Updates now replace /Applications/StereoMask.app. Use your existing Dock icon."
 read -r -p "Press Return to close this Terminal window."

@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
     qDebug() << "------------------------------";
 
     MainWindow w;
-    w.setWindowTitle("StereoMask Mac R10");
+    w.setWindowTitle("StereoMask Mac R11 (2.1.1)");
     w.show();
     return a.exec();
 }

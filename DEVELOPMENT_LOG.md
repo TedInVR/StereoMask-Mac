@@ -315,3 +315,34 @@ The reported Mac build compiled successfully but deployment could not find OpenS
 ### R10 QtSvg discovery and final signing — 2026-10-10
 
 The next Mac log still reported unresolved QtSvg during plugin discovery and an invalid signature on a modified Brotli library. Add qtsvg to the executable's LC_RPATH before macdeployqt. Defer only its old-signature verification messages to the existing dependency repair and final strict codesign verification; all other deployment errors still stop the build. Shell syntax checked. Mac execution remains to be verified.
+
+## Mac R11 / 2.1.1 — upstream Windows v2.1.1 integration (2026-10-11)
+
+### Changes
+- Ported Subbiah Rathinagiri’s Windows v2.1.1 core and UI from upstream commit c1186d71b281610ac887753d5451b419857697a9, using docs/windows-mac-comparison.md as the inspected R10 baseline checklist. Mac parent: 94c8ff8269d5e0e744ddb8aefcd61e487bcc6e73.
+- Independent polygon/raster selection objects with identities, ordered Add/Subtract, visibility, naming, reorder, deletion, point editing and Undo/Redo. Whole-polygon movement keeps partners independent and preserves geometry.
+- Frame holes, common per-eye compositor, cache, composed anaglyph, Preview Mask, Clean Preview and Match preview export; legacy cutout modes retained on project load. New images default to Match preview.
+- Optional paired matching and Smart polygon lasso, Shift-edge point insertion, Command-click removal, Return/C closure, Command+Return apply, arrow pan and Freehand routing fix. Regular lasso remains available.
+- Shared appearance controls, separate custom cutout color, Settings cancel without mutation, original Bernd Paksa attribution. Adapted offline guide and labels for Mac.
+- Preserved Mac-only updater endpoint/URL allowlist and Mach-O bundle repair; native Windows deployment files were not imported. Reopened Smart objects emit the actual brush mode so the tool dropdown stays synchronized.
+- Permanent install: scripts/install_macos_app.py stages and verifies before replacement; rollback restores prior app on final verification failure. Rejects a different bundle identity, symlink destinations and active StereoMask processes. BUILD_BRUSH_VERSION.command installs and launches /Applications/StereoMask.app. Uses CMake --fresh to survive development-folder relocation and links missing Homebrew formulas.
+- UPDATE_STEREOMASK.command downloads source to temporary storage, merges repository files into /Applications/StereoMask Development, builds and installs; no accumulating Downloads revisions. Personal source edits need a separate checkout.
+
+### Architecture / handoff
+- SelectionObject/SelectionState, SelectionObjectsCommand, JSON brushVersion 5 and selectionObjects.version 1 are in stereoviewwidget.h/.cpp. Flattened old projects import raster objects; original polygon vertices are not reconstructed. Save retains object order and metadata.
+- openingMask, exportEye, maskedPreviewEye and composed cache share preview/export appearance. Object edits and mask appearance invalidate rendering. Per-eye anaglyph uses stereoimageprocessor::createAnaglyphFromEyes.
+- alignStereoPolygon in smartselection uses horizontal grayscale template correlation, reverse validation and disparity/median fallback. Copies are independent, not enduring constraints; inspect the opposite eye. Magnetic helpers remain the prior shared foundation.
+- mainwindow.cpp wires selection dock and actions; macOS Qt::ControlModifier maps to Command, while Qt::MetaModifier maps to physical Control. Kept Qt semantics and wrote Mac-facing Command labels. Actual Mac event delivery still needs verification.
+- Version is 2.1.1, visible label Mac R11, guide cache help/r11. Mac updates.json remains source-only. No prebuilt Mac release was generated in this Linux environment.
+
+### Validation / limits
+- Native Qt 6.4.2/OpenCV 4.6 full application compilation completed in Linux. Tests require QT_PLUGIN_PATH for extracted JPEG plugins as well as the offscreen platform path; initial JPEG test failure was a missing test-environment plugin search path. Final results are appended below.
+- Python dependency graph and transactional installation tests: 12 passed. Both shell scripts passed bash -n.
+- Actual Apple Silicon compilation with OpenCV 5, Qt deployment, strict signing, Finder startup, Command-click/keypad Return and the installed Applications path still need user-Mac confirmation. Packaging fixes from R10 remain included, not claimed as independently Mac-certified. Intel compatibility and minimum macOS deployment target are unverified.
+- No calibrated occlusion recovery, canvas click-to-select applied objects, groups or per-object feathering added. Smart contours and paired matches are estimates.
+
+### Final R11 checks
+- Native smart-selection integration suite passed: object/JSON/legacy migration, independent pairing, whole-polygon movement/cancel/clamp/Undo, point gestures, navigation, preview color/alpha, PNG/JPEG export parity, anaglyph, cache invalidation and Freehand routing.
+- Help/UI suite passed, including dock/actions, exact embedded guide browser URL, smart/paired/move tools, shared Settings controls, cancellation without mutation, color picker and clickable creator attribution. Inspected offscreen UI screenshot.
+- Update suite passed after adjusting network version fixtures for 2.1.1: newer/equal/older, trusted URLs, errors, size limits and duplicate requests.
+- 12 Python bundle/installer tests passed. bash -n passed both scripts. HTML internal navigation anchors were checked. Mac execution remains the final platform check.

@@ -9,6 +9,7 @@
 #include <QFormLayout>
 #include <QSpinBox>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -33,6 +34,11 @@
 #include <QPainterPath>
 #include <QPolygonF>
 #include <QSignalBlocker>
+#include <QActionGroup>
+#include <QDockWidget>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QInputDialog>
 #include <QtMath>
 #include <cmath>
 
@@ -146,8 +152,9 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R10</h1>"
-                                     "<p align='center'><b>Original author:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R11 (2.1.1)</h1>"
+                                     "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
+                                     "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
         text->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(text);
@@ -446,6 +453,19 @@ static QIcon customIcon(const QString &name)
         p.setPen(QPen(green, 3));
         p.setBrush(Qt::NoBrush);
         p.drawPolygon(QPolygonF({{17, 42}, {28, 35}, {39, 30}, {48, 20}}));
+    } else if (name == "eyedropper") {
+        line({20,44},{41,23},blue,6);
+        p.setPen(QPen(ink,3));p.setBrush(Qt::NoBrush);p.drawEllipse(QPointF(46,18),6,6);
+        line({15,49},{22,42},ink,3);
+    } else if (name == "pairedLasso") {
+        p.setPen(QPen(blue,4)); p.setBrush(Qt::NoBrush);
+        p.drawEllipse(QPointF(20,32),10,10); p.drawEllipse(QPointF(44,32),10,10);
+        line({28,32},{36,32},ink,4);
+    } else if (name == "eye" || name == "eyeHidden") {
+        p.setPen(QPen(ink,4)); p.setBrush(Qt::NoBrush);
+        p.drawEllipse(QRectF(12,22,40,20));
+        p.setBrush(ink); p.drawEllipse(QPointF(32,32),5,5);
+        if (name == "eyeHidden") line({13,49},{51,15},ink,4);
     } else if (name == "autoMask") {
         p.setPen(QPen(blue, 4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p.setBrush(QColor("#dbeafe"));
@@ -486,7 +506,7 @@ void MainWindow::createToolbar()
     QAction *openAction = addToolAction(fileViewBar, customIcon("open"), tr("Open"), tr("Open Mask Project (.msk)"));
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
 
-    QAction *saveAction = addToolAction(fileViewBar, customIcon("save"), tr("Save"), tr("Save Mask Project (Ctrl+S)"));
+    QAction *saveAction = addToolAction(fileViewBar, customIcon("save"), tr("Save"), tr("Save Mask Project (Command+S)"));
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
 
     QAction *exportAction = addToolAction(fileViewBar, customIcon("export"), tr("Export"), tr("Export Masked Image"));
@@ -650,17 +670,48 @@ void MainWindow::createToolbar()
     configureToolbar(maskBar);
 
     addToolGroupLabel(maskBar, tr("Mask"));
-    QAction *autoMask = addToolAction(maskBar, customIcon("autoMask"), tr("Auto"), tr("Create editable mask points from stereo overlap"));
-    autoMask->setEnabled(m_viewWidget->canAutoMask());
-    connect(autoMask, &QAction::triggered, this, [this](){
-        if (m_viewWidget->createAutoMaskPoints()) {
-            statusBar()->showMessage(tr("Auto mask points created"), 3000);
+    QToolButton *autoMaskButton = new QToolButton(maskBar);
+    autoMaskButton->setIcon(customIcon("autoMask"));
+    autoMaskButton->setText(tr("Auto"));
+    autoMaskButton->setToolTip(tr("Create editable mask points from stereo overlap"));
+    autoMaskButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    autoMaskButton->setPopupMode(QToolButton::MenuButtonPopup);
+    autoMaskButton->setEnabled(m_viewWidget->canAutoMask());
+
+    QMenu *autoMaskMenu = new QMenu(autoMaskButton);
+    QActionGroup *autoMaskGroup = new QActionGroup(autoMaskMenu);
+    autoMaskGroup->setExclusive(true);
+    auto addAutoMaskMode = [&](const QString &label, StereoViewWidget::AutoMaskMode mode, bool checked = false) {
+        QAction *action = autoMaskMenu->addAction(label);
+        action->setCheckable(true);
+        action->setChecked(checked);
+        action->setData(static_cast<int>(mode));
+        autoMaskGroup->addAction(action);
+        return action;
+    };
+    addAutoMaskMode(tr("QTAGENT Rect Decompose"), StereoViewWidget::AutoMaskRectDecompose, true);
+    addAutoMaskMode(tr("SGBM Contour"), StereoViewWidget::AutoMaskContour);
+    addAutoMaskMode(tr("Legacy Smart Mask"), StereoViewWidget::AutoMaskLegacy);
+
+    auto runAutoMask = [this, autoMaskGroup]() {
+        QAction *selected = autoMaskGroup->checkedAction();
+        StereoViewWidget::AutoMaskMode mode = selected
+            ? static_cast<StereoViewWidget::AutoMaskMode>(selected->data().toInt())
+            : StereoViewWidget::AutoMaskRectDecompose;
+        if (m_viewWidget->createAutoMaskPoints(mode)) {
+            QString label = selected ? selected->text() : tr("AutoMask");
+            statusBar()->showMessage(tr("%1 points created").arg(label), 3000);
         } else {
-            statusBar()->showMessage(tr("Auto mask is available only when no mask points exist"), 3000);
+            statusBar()->showMessage(tr("Auto mask failed or is available only when no mask points exist"), 3000);
         }
-    });
-    connect(m_viewWidget, &StereoViewWidget::maskEmptyChanged, autoMask, [this, autoMask](bool isEmpty){
-        autoMask->setEnabled(m_viewWidget->isImageLoaded() && isEmpty);
+    };
+    connect(autoMaskButton, &QToolButton::clicked, this, runAutoMask);
+    connect(autoMaskMenu, &QMenu::triggered, this, runAutoMask);
+    autoMaskButton->setMenu(autoMaskMenu);
+    maskBar->addWidget(autoMaskButton);
+
+    connect(m_viewWidget, &StereoViewWidget::maskEmptyChanged, autoMaskButton, [this, autoMaskButton](bool isEmpty){
+        autoMaskButton->setEnabled(m_viewWidget->isImageLoaded() && isEmpty);
     });
 
     addToolBarBreak();
@@ -671,6 +722,7 @@ void MainWindow::createToolbar()
     brushMode->addItem(tr("Select Brush"),1);
     brushMode->addItem(tr("Erase Brush"),2);
     brushMode->addItem(tr("Polygonal lasso"),7);
+    brushMode->addItem(tr("Smart polygon lasso"),8);
     brushBar->addWidget(brushMode);
     brushBar->addWidget(new QLabel(tr(" Size: ")));
     QSpinBox *brushSize = new QSpinBox; brushSize->setRange(1, 1000); brushSize->setValue(40);
@@ -679,18 +731,33 @@ void MainWindow::createToolbar()
     QComboBox *brushBackground = new QComboBox;
     brushBackground->addItems({tr("Transparent (PNG)"), tr("Black"), tr("White")});
     brushBar->addWidget(brushBackground);
-    brushBackground->addItem(tr("Choose color…"));
+    brushBackground->addItem(tr("Custom cutout color..."));
+    brushBackground->addItem(tr("Match preview"));
+    brushBackground->setObjectName("exportBackgroundCombo");
+    brushBackground->setCurrentIndex(m_viewWidget->cutoutBackground());
+    brushBackground->setToolTip(tr("Match preview exports mask color and opacity. Transparent PNG and solid backgrounds export a cutout instead."));
     addToolBarBreak();
     QToolBar *selectionBar=addToolBar(tr("Selection tools"));
     selectionBar->addWidget(new QLabel(tr("Selection: ")));
     QComboBox *selectionOperation=new QComboBox;
     selectionOperation->addItems({tr("Add to selection"),tr("Subtract from selection")});
     selectionBar->addWidget(selectionOperation);
+    QAction *pairedLasso=selectionBar->addAction(customIcon("pairedLasso"),tr("Paired lasso"));
+    pairedLasso->setObjectName("pairedLassoAction"); pairedLasso->setCheckable(true);
+    pairedLasso->setToolTip(tr("Create an aligned, independent polygon in the opposite eye when applying a new lasso. Check the estimated alignment afterward."));
+    if (auto button=qobject_cast<QToolButton *>(selectionBar->widgetForAction(pairedLasso)))
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    connect(pairedLasso,&QAction::toggled,m_viewWidget,&StereoViewWidget::setPairedLassoEnabled);
     connect(selectionOperation,QOverload<int>::of(&QComboBox::activated),this,[this](int mode){m_viewWidget->setLassoSubtract(mode==1);});
+    connect(m_viewWidget,&StereoViewWidget::lassoOperationChanged,selectionOperation,[selectionOperation](bool subtract){selectionOperation->setCurrentIndex(subtract ? 1 : 0);});
     connect(m_viewWidget,&StereoViewWidget::brushSettingsLoaded,this,[selectionOperation](int,int){selectionOperation->setCurrentIndex(0);});
     QAction *closeOutline=selectionBar->addAction(tr("Close outline"));
+    closeOutline->setToolTip(tr("Close the current lasso outline (Enter or C while editing the image)"));
     connect(closeOutline,&QAction::triggered,m_viewWidget,&StereoViewWidget::closeLasso);
     QAction *applyOutline=selectionBar->addAction(tr("Apply selection"));
+    applyOutline->setObjectName("applyLassoAction");
+    applyOutline->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_Return),QKeySequence(Qt::CTRL | Qt::Key_Enter)});
+    applyOutline->setToolTip(tr("Apply the current lasso selection (Command+Enter). Closes an open outline with at least three points."));
     connect(applyOutline,&QAction::triggered,m_viewWidget,&StereoViewWidget::finishLasso);
     QAction *cancelOutline=selectionBar->addAction(tr("Cancel unfinished"));
     connect(cancelOutline,&QAction::triggered,m_viewWidget,&StereoViewWidget::cancelUnfinishedLasso);
@@ -700,26 +767,19 @@ void MainWindow::createToolbar()
     connect(clearPaint,&QAction::triggered,m_viewWidget,&StereoViewWidget::clearPaintedReveal);
     QAction *fit=navigationBar->addAction(tr("Fit view"));
     fit->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    fit->setToolTip(tr("Fit both full images in the window (Command+0 on Mac). Keeps your unfinished outline."));
+    fit->setToolTip(tr("Fit both full images in the window (Command+0). Keeps your unfinished outline."));
     connect(fit,&QAction::triggered,m_viewWidget,&StereoViewWidget::fitView);
     QAction *zoomIn=navigationBar->addAction(tr("Zoom +"));
     zoomIn->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_Plus), QKeySequence(Qt::CTRL | Qt::Key_Equal)});
-    zoomIn->setToolTip(tr("Zoom in (Command+Plus or Command+Equals on Mac)."));
+    zoomIn->setToolTip(tr("Zoom in (Command+Plus or Command+Equals)."));
     connect(zoomIn,&QAction::triggered,this,[this] { m_viewWidget->setZoom(m_viewWidget->zoom()*1.2f); m_viewWidget->setFocus(); });
     QAction *zoomOut=navigationBar->addAction(tr("Zoom −"));
     zoomOut->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
-    zoomOut->setToolTip(tr("Zoom out (Command+Minus on Mac)."));
+    zoomOut->setToolTip(tr("Zoom out (Command+Minus)."));
     connect(zoomOut,&QAction::triggered,this,[this] { m_viewWidget->setZoom(m_viewWidget->zoom()/1.2f); m_viewWidget->setFocus(); });
     connect(m_viewWidget, &StereoViewWidget::smartStatus, this, [this](const QString &message) { statusBar()->showMessage(message); });
     connect(m_viewWidget, &StereoViewWidget::smartBusy, this, [brushMode](bool busy) {
         brushMode->setEnabled(!busy);
-    });
-    QAction *pickColor = brushBar->addAction(tr("Eyedropper"));
-    pickColor->setToolTip(tr("Click a color in either eye's photo. Escape cancels."));
-    connect(pickColor, &QAction::triggered, this, [this, anaglyph] {
-        anaglyph->setChecked(false);
-        m_viewWidget->beginColorPick();
-        statusBar()->showMessage(tr("Click the costume or another image area to choose its background color. Escape cancels."));
     });
     connect(brushSize, QOverload<int>::of(&QSpinBox::valueChanged), m_viewWidget, &StereoViewWidget::setBrushSize);
     for (const auto key : {Qt::Key_BracketLeft, Qt::Key_BracketRight}) {
@@ -732,15 +792,11 @@ void MainWindow::createToolbar()
     }
     connect(brushBackground, QOverload<int>::of(&QComboBox::activated), this, [this, brushBackground](int mode) {
         if (mode == 3) {
-            const QColor color = QColorDialog::getColor(m_viewWidget->cutoutColor(), this, tr("Choose export background color"));
+            const QColor color = QColorDialog::getColor(m_viewWidget->cutoutColor(), this, tr("Choose solid cutout background color"));
             if (color.isValid()) m_viewWidget->setCutoutColor(color);
             else brushBackground->setCurrentIndex(m_viewWidget->cutoutBackground());
         } else m_viewWidget->setCutoutBackground(mode);
         m_viewWidget->setFocus();
-    });
-    connect(m_viewWidget, &StereoViewWidget::backgroundColorPicked, this, [this, brushBackground](const QColor &color) {
-        brushBackground->setCurrentIndex(3);
-        statusBar()->showMessage(tr("Export background color: %1").arg(color.name()));
     });
     connect(m_viewWidget, &StereoViewWidget::brushSettingsLoaded, this, [brushMode, brushBackground](int mode, int background) {
         brushMode->setCurrentIndex(qMax(0,brushMode->findData(mode))); brushBackground->setCurrentIndex(background);
@@ -772,11 +828,33 @@ void MainWindow::createToolbar()
         }
     });
 
-    QAction *color = addToolAction(maskBar, customIcon("color"), tr("Color"), tr("Quick Mask Color"));
+    QAction *color = addToolAction(maskBar, customIcon("color"), tr("Mask color"), tr("Change the same mask color used in Settings and Match preview export"));
+    color->setObjectName("maskColorAction");
     connect(color, &QAction::triggered, this, [this](){
         QColor c = QColorDialog::getColor(m_viewWidget->maskColor(), this, tr("Select Mask Color"));
         if (c.isValid()) m_viewWidget->setMaskColor(c);
     });
+    QAction *pickColor=addToolAction(maskBar,customIcon("eyedropper"),tr("Pick mask color"),tr("Sample the mask color from either source image. Uses the same setting as Mask color and Settings. Escape cancels."));
+    pickColor->setObjectName("pickMaskColorAction");
+    connect(pickColor,&QAction::triggered,this,[this,anaglyph,pan] {
+        anaglyph->setChecked(false);
+        pan->setChecked(false);
+        if (auto clean=findChild<QAction *>("cleanPreviewAction")) clean->setChecked(false);
+        m_viewWidget->beginColorPick();
+        statusBar()->showMessage(tr("Click either source image to sample the mask color. Escape cancels."));
+    });
+    connect(m_viewWidget,&StereoViewWidget::maskColorPicked,this,[this](const QColor &color) {
+        statusBar()->showMessage(tr("Mask color: %1").arg(color.name()));
+    });
+
+    QAction *maskPreview = addToolAction(maskBar, customIcon("autoMask"), tr("Preview Mask"), tr("Preview the selected export appearance, including ordered foreground selections. Match preview uses mask color and opacity; cutout modes use their selected background."));
+    maskPreview->setCheckable(true);
+    maskPreview->setChecked(m_viewWidget->maskPreviewEnabled());
+    connect(maskPreview, &QAction::toggled, m_viewWidget, &StereoViewWidget::setMaskPreviewEnabled);
+    QAction *cleanPreview=addToolAction(maskBar,customIcon("eye"),tr("Clean Preview"),tr("Show the selected export appearance without editing outlines, points or hints (F8). Turn off to resume drawing."));
+    cleanPreview->setObjectName("cleanPreviewAction"); cleanPreview->setCheckable(true);
+    cleanPreview->setChecked(m_viewWidget->cleanPreviewEnabled()); cleanPreview->setShortcut(Qt::Key_F8);
+    connect(cleanPreview,&QAction::toggled,m_viewWidget,&StereoViewWidget::setCleanPreviewEnabled);
 
     QAction *previewFeather = addToolAction(maskBar, customIcon("featherPreview"), tr("Preview Feather"), tr("Enable feathering in preview"));
     previewFeather->setCheckable(true);
@@ -784,6 +862,7 @@ void MainWindow::createToolbar()
     connect(previewFeather, &QAction::toggled, m_viewWidget, &StereoViewWidget::setPreviewFeatherEnabled);
 
     m_opacitySpin = new QSpinBox;
+    m_opacitySpin->setObjectName("maskOpacitySpin");
     m_opacitySpin->setRange(0, 100);
     m_opacitySpin->setSuffix("%");
     m_opacitySpin->setToolTip(tr("Quick Mask Opacity"));
@@ -792,6 +871,126 @@ void MainWindow::createToolbar()
         m_viewWidget->setMaskOpacity(v / 100.0f);
     });
     maskBar->addWidget(m_opacitySpin);
+    auto syncAppearance=[this,color](const QColor &value,float opacity) {
+        QPixmap swatch(20,20);swatch.fill(value);color->setIcon(QIcon(swatch));
+        QSignalBlocker blocker(m_opacitySpin);m_opacitySpin->setValue(qRound(opacity*100));
+    };
+    connect(m_viewWidget,&StereoViewWidget::maskAppearanceChanged,this,syncAppearance);
+    syncAppearance(m_viewWidget->maskColor(),m_viewWidget->maskOpacity());
+
+    QDockWidget *selectionsDock=new QDockWidget(tr("Selections"),this);
+    selectionsDock->setObjectName("selectionObjectsDock");
+    selectionsDock->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
+    QWidget *selectionPanel=new QWidget(selectionsDock);
+    QVBoxLayout *selectionLayout=new QVBoxLayout(selectionPanel); selectionLayout->setContentsMargins(4,4,4,4);
+    QToolBar *objectTools=new QToolBar(selectionPanel);
+    objectTools->setIconSize(QSize(18,18));
+    QAction *editObject=objectTools->addAction(customIcon("curve"),tr("Edit points"));
+    editObject->setToolTip(tr("Edit the selected polygon's control points"));
+    QAction *renameObject=objectTools->addAction(style()->standardIcon(QStyle::SP_FileDialogDetailedView),tr("Rename"));
+    renameObject->setToolTip(tr("Rename the selected object"));
+    QAction *deleteObject=objectTools->addAction(customIcon("delete"),tr("Delete"));
+    deleteObject->setToolTip(tr("Delete the selected object"));
+    QAction *moveObjectUp=objectTools->addAction(customIcon("shiftUp"),tr("Move up"));
+    moveObjectUp->setToolTip(tr("Apply this selection earlier"));
+    QAction *moveObjectDown=objectTools->addAction(customIcon("shiftDown"),tr("Move down"));
+    moveObjectDown->setToolTip(tr("Apply this selection later"));
+    QAction *invertObject=objectTools->addAction(customIcon("swap"),tr("Switch Add/Subtract"));
+    invertObject->setObjectName("invertSelectionModeAction");
+    invertObject->setToolTip(tr("Switch the selected object's Add/Subtract mode"));
+    QAction *movePolygon=objectTools->addAction(customIcon("pan"),tr("Move polygon"));
+    movePolygon->setObjectName("movePolygonAction");movePolygon->setCheckable(true);
+    movePolygon->setToolTip(tr("Drag the selected polygon as a whole in its eye. Shift-drag moves horizontally; Escape cancels a drag."));
+    selectionLayout->addWidget(objectTools);
+    QTreeWidget *objects=new QTreeWidget(selectionPanel);
+    objects->setObjectName("selectionObjectsList");
+    objects->setHeaderLabels({tr(""),tr("Selection"),tr("Eye"),tr("Mode")});
+    objects->setRootIsDecorated(false); objects->setSelectionMode(QAbstractItemView::SingleSelection);
+    objects->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    objects->header()->setSectionResizeMode(0,QHeaderView::Fixed); objects->setColumnWidth(0,30);
+    objects->header()->setSectionResizeMode(1,QHeaderView::Stretch);
+    objects->header()->setSectionResizeMode(2,QHeaderView::ResizeToContents);
+    objects->header()->setSectionResizeMode(3,QHeaderView::ResizeToContents);
+    selectionLayout->addWidget(objects); selectionsDock->setWidget(selectionPanel);
+    addDockWidget(Qt::RightDockWidgetArea,selectionsDock);
+    selectionsDock->setMinimumWidth(290);
+    auto updateObjectActions=[objects,editObject,renameObject,deleteObject,moveObjectUp,moveObjectDown,invertObject,movePolygon]() {
+        auto item=objects->currentItem();
+        editObject->setEnabled(item && item->data(1,Qt::UserRole+1).toBool());
+        renameObject->setEnabled(item!=nullptr); deleteObject->setEnabled(item!=nullptr);
+        const int row=item ? objects->indexOfTopLevelItem(item) : -1;
+        moveObjectUp->setEnabled(row>0);
+        moveObjectDown->setEnabled(row>=0 && row<objects->topLevelItemCount()-1);
+        invertObject->setEnabled(item!=nullptr);
+        movePolygon->setEnabled(item && item->data(1,Qt::UserRole+1).toBool() && item->data(0,Qt::UserRole).toBool());
+        if (!movePolygon->isEnabled() && movePolygon->isChecked()) movePolygon->setChecked(false);
+        invertObject->setToolTip(item ? (item->data(3,Qt::UserRole).toBool() ? tr("Change this selection to Add") : tr("Change this selection to Subtract"))
+                                      : tr("Switch the selected object's Add/Subtract mode"));
+    };
+    auto refreshObjects=[this,objects,updateObjectActions]() {
+        const QString selected=objects->currentItem() ? objects->currentItem()->data(1,Qt::UserRole).toString() : QString();
+        QSignalBlocker blocker(objects); objects->clear();
+        for (const auto &object:m_viewWidget->selectionObjects()) {
+            auto item=new QTreeWidgetItem(objects,{QString(),object.name,object.right ? tr("Right") : tr("Left"),object.subtract ? tr("Subtract") : tr("Add")});
+            item->setData(1,Qt::UserRole,object.id); item->setData(1,Qt::UserRole+1,object.anchors.size()>=3);
+            item->setData(0,Qt::UserRole,object.visible);
+            item->setData(3,Qt::UserRole,object.subtract);
+            item->setIcon(0,customIcon(object.visible ? "eye" : "eyeHidden"));
+            item->setToolTip(0,object.visible ? tr("Hide selection") : tr("Show selection"));
+            if (!object.visible) item->setForeground(1,palette().brush(QPalette::Disabled,QPalette::Text));
+            item->setFlags(item->flags()|Qt::ItemIsEditable);
+            if (object.id==selected) objects->setCurrentItem(item);
+        }
+        updateObjectActions();
+    };
+    connect(m_viewWidget,&StereoViewWidget::selectionObjectsChanged,this,refreshObjects);
+    connect(objects,&QTreeWidget::currentItemChanged,this,[this,objects,updateObjectActions]() {
+        updateObjectActions();
+        m_viewWidget->selectSelection(objects->currentItem() ? objects->currentItem()->data(1,Qt::UserRole).toString() : QString());
+    });
+    connect(objects,&QTreeWidget::itemClicked,this,[this](QTreeWidgetItem *item,int column) {
+        if (column==0) m_viewWidget->setSelectionVisible(item->data(1,Qt::UserRole).toString(),!item->data(0,Qt::UserRole).toBool());
+    });
+    connect(objects,&QTreeWidget::itemDoubleClicked,this,[objects](QTreeWidgetItem *item,int column) {
+        if (column==1) objects->editItem(item,column);
+    });
+    connect(objects,&QTreeWidget::itemChanged,this,[this](QTreeWidgetItem *item,int column) {
+        if (column==1) m_viewWidget->renameSelection(item->data(1,Qt::UserRole).toString(),item->text(1));
+    });
+    connect(editObject,&QAction::triggered,this,[this,objects]() {
+        if (auto item=objects->currentItem()) m_viewWidget->editSelection(item->data(1,Qt::UserRole).toString());
+    });
+    connect(renameObject,&QAction::triggered,this,[this,objects]() {
+        auto item=objects->currentItem(); if (!item) return;
+        const QString id=item->data(1,Qt::UserRole).toString(); bool ok=false;
+        const QString name=QInputDialog::getText(this,tr("Rename selection"),tr("Name:"),QLineEdit::Normal,item->text(1),&ok);
+        if (ok) m_viewWidget->renameSelection(id,name);
+    });
+    connect(deleteObject,&QAction::triggered,this,[this,objects]() {
+        if (auto item=objects->currentItem()) m_viewWidget->deleteSelection(item->data(1,Qt::UserRole).toString());
+    });
+    connect(moveObjectUp,&QAction::triggered,this,[this,objects]() {
+        if (auto item=objects->currentItem()) m_viewWidget->moveSelection(item->data(1,Qt::UserRole).toString(),-1);
+    });
+    connect(moveObjectDown,&QAction::triggered,this,[this,objects]() {
+        if (auto item=objects->currentItem()) m_viewWidget->moveSelection(item->data(1,Qt::UserRole).toString(),1);
+    });
+    connect(invertObject,&QAction::triggered,this,[this,objects]() {
+        if (auto item=objects->currentItem()) m_viewWidget->toggleSelectionOperation(item->data(1,Qt::UserRole).toString());
+    });
+    connect(movePolygon,&QAction::toggled,this,[this,anaglyph,pan,freehand](bool enabled) {
+        if (enabled) {
+            anaglyph->setChecked(false);pan->setChecked(false);freehand->setChecked(false);
+            if (auto clean=findChild<QAction *>("cleanPreviewAction")) clean->setChecked(false);
+        }
+        m_viewWidget->setPolygonMoveEnabled(enabled);
+    });
+    connect(m_viewWidget,&StereoViewWidget::polygonMoveModeChanged,this,[movePolygon](bool enabled) {
+        QSignalBlocker blocker(movePolygon);movePolygon->setChecked(enabled);
+    });
+    QMenu *viewMenu=menuBar()->addMenu(tr("&View"));
+    viewMenu->addAction(maskPreview); viewMenu->addAction(cleanPreview); viewMenu->addAction(selectionsDock->toggleViewAction());
+    refreshObjects();
 
 }
 
@@ -801,9 +1000,11 @@ class SettingsDialog : public QDialog {
 public:
     SettingsDialog(AppSettings &s, QWidget *parent = nullptr) : QDialog(parent), m_settings(s) {
         setWindowTitle(tr("Mask Settings"));
+        setObjectName("maskSettingsDialog");
         QFormLayout *layout = new QFormLayout(this);
 
         m_maskColorBtn = new QPushButton(tr("Select Color..."));
+        m_maskColorBtn->setObjectName("settingsMaskColorButton");
         updateColorBtn(m_maskColorBtn, m_settings.maskColor);
         connect(m_maskColorBtn, &QPushButton::clicked, [this](){
             QColor c = QColorDialog::getColor(m_settings.maskColor, this);
@@ -812,6 +1013,7 @@ public:
         layout->addRow(tr("Mask Color:"), m_maskColorBtn);
 
         m_opacitySpin = new QSpinBox;
+        m_opacitySpin->setObjectName("settingsMaskOpacitySpin");
         m_opacitySpin->setRange(0, 100);
         m_opacitySpin->setValue(m_settings.opacity * 100);
         m_opacitySpin->setSuffix("%");
@@ -847,7 +1049,8 @@ public:
             QColor c = QColorDialog::getColor(m_settings.bgColor, this);
             if (c.isValid()) { m_settings.bgColor = c; updateColorBtn(m_bgColorBtn, c); }
         });
-        layout->addRow(tr("Background Color:"), m_bgColorBtn);
+        layout->addRow(tr("Padding/gap color:"), m_bgColorBtn);
+        m_bgColorBtn->setToolTip(tr("Fills exported padding and the space between the eyes; this is not the mask color."));
 
         m_autoSaveCheck = new QCheckBox(tr("AutoSave Project Changes"));
         m_autoSaveCheck->setChecked(m_settings.autoSave);
@@ -887,8 +1090,10 @@ void MainWindow::showSettings()
     m_settings.bgColor = m_viewWidget->bgColor();
     m_settings.interleavingSpace = m_viewWidget->interleavingSpace();
 
-    SettingsDialog dlg(m_settings, this);
+    AppSettings edited=m_settings;
+    SettingsDialog dlg(edited, this);
     if (dlg.exec() == QDialog::Accepted) {
+        m_settings=edited;
         m_settings.save();
         m_viewWidget->setMaskSettings(m_settings.maskColor, m_settings.opacity, m_settings.featherAmount);
         m_viewWidget->setPaddingSettings(m_settings.padx, m_settings.pady, m_settings.bgColor, m_settings.interleavingSpace);
@@ -900,7 +1105,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r10";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r11";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -926,12 +1131,23 @@ void MainWindow::checkForUpdates()
 
 void MainWindow::showAbout()
 {
-    QMessageBox::about(this, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R10</h2>"
+    QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
+        tr("<h2>StereoMask Mac R11 (2.1.1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
-           "<p><b>Original author:</b> Subbiah Rathinagiri (S. Rathinagiri)</p><p><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p><p>A collaborative effort. Based on StereoMask 2.0.0; original MIT license preserved.</p>"
+           "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
+           "<p>StereoMask is inspired by his Stereomasken program and its creative "
+           "3D framing and masking ideas. We gratefully acknowledge his contribution "
+           "to the stereo photography community.</p>"
+           "<p><a href='https://www.stereomasken.de/index_en.htm'>Original Stereomasken website</a></p>"
+           "<p><b>Modern StereoMask Windows implementation:</b> Subbiah Rathinagiri (S. Rathinagiri)</p>"
+           "<p><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
+           "<p>A collaborative effort. StereoMask's MIT license is preserved.</p>"
            "<p>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"
-           "<p>Built for the stereo photography community.</p>"));
+           "<p>Built for the stereo photography community.</p>"), QMessageBox::Ok, this);
+    aboutBox.setTextFormat(Qt::RichText);
+    aboutBox.setTextInteractionFlags(Qt::TextBrowserInteraction);
+    for (QLabel *label : aboutBox.findChildren<QLabel *>()) label->setOpenExternalLinks(true);
+    aboutBox.exec();
 }
 
 void MainWindow::newProject()
@@ -1016,25 +1232,17 @@ void MainWindow::exportImage()
         bool cutout = m_viewWidget->cutoutEnabled();
         int cutoutBackground = m_viewWidget->cutoutBackground();
         QColor cutoutColor = m_viewWidget->cutoutColor();
-        QImage revealLeft = m_viewWidget->revealMask(false), revealRight = m_viewWidget->revealMask(true);
+        const int previewFeather=(!cutout || cutoutBackground==4) && m_viewWidget->previewFeatherEnabled() ? featherAmount : 0;
+        QImage revealLeft = m_viewWidget->openingMask(false,previewFeather), revealRight = m_viewWidget->openingMask(true,previewFeather);
         if (cutout && cutoutBackground == 0 && !fileName.endsWith(".png", Qt::CaseInsensitive)) {
             QMessageBox::information(this, tr("Transparent export"), tr("Choose a PNG filename to preserve transparency."));
             return;
         }
-        QPointer<MainWindow> self(this);
-
         statusBar()->showMessage(tr("Please wait... Exporting (0%)"));
         m_exportWatcher->setProperty("fileName", fileName);
         m_exportWatcher->setFuture(QtConcurrent::run([=]() {
-            if (cutout) return StereoViewWidget::saveCutout(fileName, left, right, points, revealLeft, revealRight, cutoutBackground, padx, pady, interleavingSpace, cutoutColor);
-            return StereoViewWidget::saveImageData(fileName, left, right, points, maskColor, opacity, padx, pady,
-                                                   bgColor, interleavingSpace, featherAmount,
-                                                   [self](int pct) {
-                                                       if (!self) return;
-                                                       QMetaObject::invokeMethod(self, [self, pct]() {
-                                                           if (self) self->statusBar()->showMessage(self->tr("Please wait... Exporting (%1%)").arg(pct));
-                                                       }, Qt::QueuedConnection);
-                                                   });
+            if (!cutout || cutoutBackground==4) return StereoViewWidget::saveMaskedPreview(fileName,left,right,revealLeft,revealRight,maskColor,opacity,padx,pady,interleavingSpace,bgColor);
+            return StereoViewWidget::saveCutout(fileName, left, right, points, revealLeft, revealRight, cutoutBackground, padx, pady, interleavingSpace, cutoutColor,true);
         }));
     }
 }
@@ -1070,3 +1278,4 @@ void MainWindow::toggleSwapSides(bool enabled)
 {
     m_viewWidget->setSwapSides(enabled);
 }
+
