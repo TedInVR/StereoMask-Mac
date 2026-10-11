@@ -349,3 +349,20 @@ The next Mac log still reported unresolved QtSvg during plugin discovery and an 
 
 ### R11 Mac deployment follow-up — 2026-10-11
 The user’s native Apple Silicon build reached 100%, but macdeployqt still could not resolve QtSvg from its plugin search paths. Explicitly copy SVG plugins when available and defer only the exact QtSvg resolver error (when its framework exists) and stale signature messages. All other deployment errors stop. The existing repair must then resolve every Mach-O load to bundled dependencies and verify strict signing before installation. Added deployment-log regression checks for missing SVG, mixed/unrelated errors, silent failures and known signature messages. This is not blanket suppression of deployment failures; real Mac runtime verification remains pending.
+
+## Mac R12 / 2.1.2 — Stereo Window (2026-10-11)
+- Theodore requested a first optional step similar to Stereo Photo Maker’s horizontal Easy Adjustment: source-pair depth, distinct from custom frame disparity.
+- Added Stereo Window near New/Open: isolated source anaglyph dialog, horizontal slider, source-pixel spin field, Reset, Apply/Cancel. Positive relative left-minus-right translation moves forward, negative back. Integer shifts are split between eyes; dimensions stay constant and new side strips are transparent.
+- StereoImageProcessor retains original eyes and recomputes integer translations from originals, preserving zero-offset pixel identity and avoiding repeated resampling. All source access/export/AutoMask/pairing now uses adjusted eyes. Anaglyph preview uses a display-resolution copy and never mutates the project.
+- StereoWindowCommand records before/after offsets as one undo step; ++m_smartRevision invalidates rendering and stale smart jobs. Existing frame/selection geometry stays fixed. Unfinished lasso and polygon move mode block dialog opening.
+- stereoWindowOffset is stored alongside brushVersion 5. Common loadBrushSettings restores it for explicit project load and image-sidecar auto-load. Missing field defaults zero; bounds are half eye-width. Current Windows v2.1.1/earlier Macs ignore the extension, so guide recommends adjusted-pair export or copies for exchange.
+- Version 2.1.2, visible Mac R12, help cache r12. Updated guide with first-step tutorial, source preservation, side-strip behavior and exchange limits.
+
+### Next requested feature — optional Guided Workflow (not implemented)
+Theodore wants a less intimidating, step-by-step editing route: optionally adjust stereo window; create a basic frame; edit or accept frame; choose brush/lasso for foreground protrusions; review and export. Each step should provide a short instruction, appropriate tools, and accept/Next/Skip navigation without losing completed work. Keep manual editing available. This is the next proposed task after Stereo Window, not a shipped feature.
+
+### Validation
+Native build, pixel/alpha/offset/Undo/Redo/source-preservation/JSON/sidecar/export-cache checks and Apply/Cancel UI tests are being run. Apple Silicon packaging and physical Mac interaction remain user-side validation.
+
+### Final R12 results
+Full native Qt/OpenCV application compiled. Smart-selection suite passed with new stereo-window assertions for aligned anaglyph pixels, preview isolation, shifted eyes/transparent side strips, unchanged dimensions, export cache, one-step Undo/Redo, source-pixel reset, original file preservation, explicit/sidecar project load and unchanged custom frame coordinates. Help/UI suite passed Apply/Cancel/Undo through the actual dialog. Existing object, pairing, preview/export, navigation and updater suites passed. 16 Python packaging/installer tests and both shell syntax checks passed. Guided Workflow was recorded as a future feature, not added to the UI. Actual Mac build and launch remain to be confirmed.

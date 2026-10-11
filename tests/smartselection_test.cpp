@@ -50,6 +50,28 @@ static void drag(QWidget &view,QPoint from,QPoint to,Qt::KeyboardModifiers modif
 int main(int argc,char **argv) {
  QApplication app(argc,argv);
  try {
+    QTemporaryDir windowTemp; const QString windowFile=windowTemp.path()+"/window.png";
+    QImage windowSource(40,20,QImage::Format_RGB32);windowSource.fill(Qt::black);
+    windowSource.setPixelColor(12,10,Qt::white);windowSource.setPixelColor(28,10,Qt::white);
+    require(windowSource.save(windowFile),"window fixture save");
+    StereoViewWidget windowView;windowView.setAutoSave(false);require(windowView.loadImage(windowFile),"window load");
+    const auto originalWindowLeft=windowView.leftImage();
+    require(windowView.stereoWindowPreview(-4).pixelColor(10,10)==QColor(Qt::white),"window anaglyph alignment");
+    require(windowView.stereoWindowOffset()==0 && windowView.leftImage()==originalWindowLeft,"window preview mutates source");
+    windowView.setStereoWindowOffset(-4);
+    require(windowView.leftImage().pixelColor(10,10)==QColor(Qt::white) && windowView.rightImage().pixelColor(10,10)==QColor(Qt::white),"window relative shift");
+    require(windowView.leftImage().size()==originalWindowLeft.size() && windowView.leftImage().pixelColor(19,0).alpha()==0,"window edge/canvas");
+    require(windowView.exportEye(false).pixelColor(10,10)==QColor(Qt::white),"window export/cache");
+    windowView.undoStack()->undo();require(windowView.stereoWindowOffset()==0 && windowView.leftImage()==originalWindowLeft,"window undo");
+    windowView.undoStack()->redo();require(windowView.stereoWindowOffset()==-4,"window redo");
+    require(windowView.saveProject(),"window save");
+    StereoViewWidget windowReload;windowReload.setAutoSave(false);require(windowReload.loadProject(windowTemp.path()+"/window.msk") && windowReload.stereoWindowOffset()==-4 && windowReload.leftImage()==windowView.leftImage(),"window project roundtrip");
+    StereoViewWidget windowSidecar;windowSidecar.setAutoSave(false);require(windowSidecar.loadImage(windowFile) && windowSidecar.stereoWindowOffset()==-4,"window sidecar roundtrip");
+    windowView.addPoint(QPointF(3,3),0);windowView.setStereoWindowOffset(3);
+    require(windowView.points()[0].pos==QPointF(3,3) && windowView.leftImage().pixelColor(14,10)==QColor(Qt::white) && windowView.rightImage().pixelColor(7,10)==QColor(Qt::white),"window frame separation/odd shift");
+    windowView.setStereoWindowOffset(0);require(windowView.leftImage()==originalWindowLeft && QImage(windowFile)==windowSource,"window reset/original preserved");
+    std::cout<<"Stereo-window pixels, preview, export/cache, alpha, Undo/Redo, project/sidecar, frame separation and original preservation: PASS\n";
+
     const QImage image=fixture();const QImage seed=hints(image.size());const QRect region(30,12,170,156);
     QImage rough(image.size(),QImage::Format_ARGB32_Premultiplied);rough.fill(Qt::transparent);
     {QPainter p(&rough);p.fillRect(QRect(43,20,126,145),Qt::white);p.fillRect(QRect(229,160,4,4),Qt::white);}

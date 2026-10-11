@@ -39,6 +39,10 @@ class StereoViewWidget : public QWidget
 public:
     explicit StereoViewWidget(QWidget *parent = nullptr);
 
+    int stereoWindowOffset() const { return m_processor.stereoWindowOffset(); }
+    QImage stereoWindowPreview(int pixels) const { return m_processor.stereoWindowPreview(pixels); }
+    void setStereoWindowOffset(int pixels);
+    void applyStereoWindowOffset(int pixels);
     QVector<SelectionObject> selectionObjects() const { return m_selectionObjects; }
     SelectionState selectionState() const;
     void restoreSelectionState(const SelectionState &state);

@@ -979,6 +979,7 @@ void StereoViewWidget::brushAt(const QPoint &pos) {
 }
 
 void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
+    m_processor.setStereoWindowOffset(obj["stereoWindowOffset"].toInt(0));
     cancelLasso();
     m_completedLeft=decodeLassoPath(obj["lassoOutlineLeft"].toObject());
     m_completedRight=decodeLassoPath(obj["lassoOutlineRight"].toObject());
@@ -1085,6 +1086,7 @@ bool StereoViewWidget::saveProject()
     QJsonObject obj; 
     obj["selectionObjects"]=selectionObjectsJson();
     obj["brushVersion"] = 5;
+    obj["stereoWindowOffset"] = stereoWindowOffset();
     obj["lassoOutlineLeft"]=encodeLassoPath(m_completedLeft);
     obj["lassoOutlineRight"]=encodeLassoPath(m_completedRight);
     obj["smartHintsLeftPNG"] = encodeReveal(m_smartHintsLeft);
@@ -2840,3 +2842,23 @@ void StereoViewWidget::clearPaintedReveal() {
     emit smartStatus(tr("Painted reveal cleared in both eyes; your frame stays open. Undo restores the paint."));
 }
 
+
+namespace {
+class StereoWindowCommand : public QUndoCommand {
+    StereoViewWidget *view; int before,after;
+public:
+    StereoWindowCommand(StereoViewWidget *widget,int next):view(widget),before(widget->stereoWindowOffset()),after(next) {setText(QObject::tr("Adjust stereo window"));}
+    void undo() override {view->applyStereoWindowOffset(before);}
+    void redo() override {view->applyStereoWindowOffset(after);}
+};
+}
+void StereoViewWidget::setStereoWindowOffset(int pixels) {
+    if (!isImageLoaded() || m_refining || hasLasso() || m_draggingPolygon) return;
+    pixels=qBound(-m_processor.leftImage().width()/2,pixels,m_processor.leftImage().width()/2);
+    if (pixels!=stereoWindowOffset()) m_undoStack->push(new StereoWindowCommand(this,pixels));
+}
+void StereoViewWidget::applyStereoWindowOffset(int pixels) {
+    m_processor.setStereoWindowOffset(pixels); ++m_smartRevision;
+    updateAnaglyphIfActive();update();
+    if (m_autoSave) saveProject();
+}

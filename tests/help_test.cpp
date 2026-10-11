@@ -2,6 +2,7 @@
 #include "stereoviewwidget.h"
 #include <QApplication>
 #include <QComboBox>
+#include <QSlider>
 #include <QDesktopServices>
 #include <QFile>
 #include <QMenu>
@@ -52,6 +53,7 @@ int main(int argc, char **argv) {
     QFile bundled(":/docs/user-guide.html");
     if (!browser.url.isLocalFile() || !file.open(QIODevice::ReadOnly) || !bundled.open(QIODevice::ReadOnly)) return 2;
     const QByteArray html = file.readAll();
+    if (!html.contains("First optional step") || !html.contains("Reset to original")) return 34;
     if (html != bundled.readAll() || !html.contains("Subbiah Rathinagiri") || !html.contains("Select Brush") || !html.contains("Tutorial 2")) return 3;
     for (const QByteArray &feature: {QByteArray("Smart polygon lasso"),QByteArray("Paired polygon selections"),QByteArray("Selections"),QByteArray("Command + Enter"),QByteArray("Command-click lasso anchor"),QByteArray("Shift-click lasso edge"),QByteArray("F8"),QByteArray("Match preview"),QByteArray("Padding/gap color"),QByteArray("QTAGENT Rect Decompose"),QByteArray("Bernd Paksa")})
         if (!html.contains(feature)) {std::cerr<<"Guide lacks current feature: "<<feature.constData()<<'\n';return 3;}
@@ -116,6 +118,22 @@ int main(int argc, char **argv) {
     const QString imagePath=selectionFixture.path()+"/panel.png";
     if (!pair.save(imagePath)) return 9;
     view->setAutoSave(false); if (!view->loadImage(imagePath)) return 10;
+
+    auto windowAction=window.findChild<QAction *>("stereoWindowAction");
+    if (!windowAction || !windowAction->isEnabled()) return 30;
+    bool windowPreview=false;
+    QTimer::singleShot(0,[&]{
+        auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
+        auto slider=dialog->findChild<QSlider *>("stereoWindowSlider");
+        auto label=dialog->findChild<QLabel *>("stereoWindowPreview");
+        if (slider) slider->setValue(7);
+        windowPreview=slider && label && !label->pixmap().isNull() && view->stereoWindowOffset()==0 && dialog->grab().save("stereo-window-dialog.png");dialog->reject();
+    });
+    windowAction->trigger();if (!windowPreview || view->stereoWindowOffset()!=0) return 31;
+    QTimer::singleShot(0,[&]{auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
+        auto slider=dialog->findChild<QSlider *>("stereoWindowSlider");if (slider) slider->setValue(7);dialog->accept();});
+    windowAction->trigger();if (view->stereoWindowOffset()!=7) return 32;
+    view->undoStack()->undo();if (view->stereoWindowOffset()!=0) return 33;
     auto opacitySpin=window.findChild<QSpinBox *>("maskOpacitySpin");
     auto maskColor=window.findChild<QAction *>("maskColorAction");
     auto picker=window.findChild<QAction *>("pickMaskColorAction");

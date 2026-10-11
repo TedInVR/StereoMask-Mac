@@ -1,4 +1,4 @@
-StereoMask Mac R11 / 2.1.1
+StereoMask Mac R12 / 2.1.2
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -20,3 +20,7 @@ Help > Check for Updates checks the Mac repository; it does not install.
 
 Source release for Apple Silicon. This revision still needs actual Mac
 packaging, Finder launch and input verification before a binary release.
+
+First optional step: Stereo Window opens an anaglyph slider. Apply commits
+one undoable source-depth adjustment; Cancel leaves it unchanged. Save
+the project to keep it. Help explains the new tool and side strips.

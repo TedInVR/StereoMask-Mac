@@ -39,6 +39,8 @@
 #include <QTreeWidget>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QSlider>
+#include <QDialogButtonBox>
 #include <QtMath>
 #include <cmath>
 
@@ -152,7 +154,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R11 (2.1.1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R12 (2.1.2)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -505,6 +507,12 @@ void MainWindow::createToolbar()
 
     QAction *openAction = addToolAction(fileViewBar, customIcon("open"), tr("Open"), tr("Open Mask Project (.msk)"));
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
+
+    QAction *windowDepth=addToolAction(fileViewBar,customIcon("anaglyph"),tr("Stereo Window"),tr("First step: adjust the starting image’s stereo-window depth"));
+    windowDepth->setObjectName("stereoWindowAction");
+    windowDepth->setEnabled(m_viewWidget->isImageLoaded());
+    connect(m_viewWidget,&StereoViewWidget::maskEmptyChanged,windowDepth,[this,windowDepth](bool){windowDepth->setEnabled(m_viewWidget->isImageLoaded());});
+    connect(windowDepth,&QAction::triggered,this,&MainWindow::adjustStereoWindow);
 
     QAction *saveAction = addToolAction(fileViewBar, customIcon("save"), tr("Save"), tr("Save Mask Project (Command+S)"));
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
@@ -1105,7 +1113,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r11";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r12";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1132,7 +1140,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R11 (2.1.1)</h2>"
+        tr("<h2>StereoMask Mac R12 (2.1.2)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1279,3 +1287,35 @@ void MainWindow::toggleSwapSides(bool enabled)
     m_viewWidget->setSwapSides(enabled);
 }
 
+
+void MainWindow::adjustStereoWindow() {
+    if (!m_viewWidget->isImageLoaded()) return;
+    if (m_viewWidget->hasLasso() || m_viewWidget->polygonMoveEnabled()) {
+        QMessageBox::information(this,tr("Stereo Window"),tr("Apply or cancel the unfinished lasso and turn Move polygon off before adjusting the stereo window.")); return;
+    }
+    QDialog dialog(this);dialog.setObjectName("stereoWindowDialog");dialog.setWindowTitle(tr("Stereo Window — starting image depth"));
+    auto layout=new QVBoxLayout(&dialog);
+    auto explanation=new QLabel(tr("Move the slider until the subject you want at the stereo window has aligned red/cyan edges.\nThis shifts the starting eye images; it does not adjust the custom frame."),&dialog);
+    explanation->setWordWrap(true);layout->addWidget(explanation);
+    auto preview=new QLabel(&dialog);preview->setObjectName("stereoWindowPreview");preview->setAlignment(Qt::AlignCenter);preview->setMinimumSize(600,360);preview->setStyleSheet("background:#202020");layout->addWidget(preview);
+    auto row=new QHBoxLayout;
+    row->addWidget(new QLabel(tr("Further back"),&dialog));
+    auto slider=new QSlider(Qt::Horizontal,&dialog);slider->setObjectName("stereoWindowSlider");
+    const int limit=qMax(1,m_viewWidget->leftImage().width()/2);slider->setRange(-limit,limit);slider->setValue(m_viewWidget->stereoWindowOffset());row->addWidget(slider);
+    row->addWidget(new QLabel(tr("Forward"),&dialog));
+    auto amount=new QSpinBox(&dialog);amount->setObjectName("stereoWindowPixels");amount->setRange(-limit,limit);amount->setValue(slider->value());amount->setSuffix(tr(" px"));row->addWidget(amount);
+    auto reset=new QPushButton(tr("Reset to original"),&dialog);row->addWidget(reset);layout->addLayout(row);
+    auto updatePreview=[&]{preview->setPixmap(QPixmap::fromImage(m_viewWidget->stereoWindowPreview(slider->value())).scaled(800,450,Qt::KeepAspectRatio,Qt::SmoothTransformation));};
+    connect(slider,&QSlider::valueChanged,amount,&QSpinBox::setValue);
+    connect(amount,QOverload<int>::of(&QSpinBox::valueChanged),slider,&QSlider::setValue);
+    connect(slider,&QSlider::valueChanged,&dialog,[&]{updatePreview();});
+    connect(reset,&QPushButton::clicked,&dialog,[&]{slider->setValue(0);});
+    auto note=new QLabel(tr("Use this before framing and tracing. Existing frame points and selections stay in place.\nThe canvas size stays unchanged; shifting can expose empty side strips. Your original file stays untouched.\nApply stores the adjustment in the project; Save keeps it and Export uses the shifted pair."),&dialog);note->setWordWrap(true);layout->addWidget(note);
+    auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    updatePreview();
+    if (dialog.exec()==QDialog::Accepted) {
+        m_viewWidget->setStereoWindowOffset(slider->value());
+        statusBar()->showMessage(tr("Stereo window adjusted. Save your project to retain it; Undo restores the previous depth."),6000);
+    }
+}

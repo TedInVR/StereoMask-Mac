@@ -1,6 +1,6 @@
 {
-  "version": "2.1.1",
+  "version": "2.1.2",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R11 ports Subbiah Rathinagiri\u2019s Windows v2.1.1 selection objects, paired lasso, whole-polygon movement, previews and export improvements. Source download; build on your Mac."
+  "notes": "Mac R12 adds Stereo Window: anaglyph preview, horizontal depth slider, precise pixel adjustment, Apply/Cancel, Reset, Undo/Redo and saved project offset. Source download; build on your Mac."
 }

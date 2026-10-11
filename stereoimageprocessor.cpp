@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QImageReader>
 #include <QFile>
+#include <QtMath>
 
 StereoImageProcessor::StereoImageProcessor()
 {
@@ -67,6 +68,8 @@ bool StereoImageProcessor::loadSideBySide(const QString &fileName)
 
     m_left = fullImage.copy(0, 0, width, height);
     m_right = fullImage.copy(width, 0, width, height);
+
+    m_originalLeft=m_left; m_originalRight=m_right; m_windowOffset=0;
 
     qDebug() << "Image loaded successfully. Size:" << width << "x" << height;
 
@@ -185,3 +188,28 @@ void StereoImageProcessor::createAnaglyphFromEyes(const QImage &left, const QIma
     }
 }
 
+
+QImage StereoImageProcessor::shiftedEye(const QImage &source, int shift) {
+    if (shift==0) return source;
+    QImage result(source.size(),QImage::Format_ARGB32_Premultiplied);
+    result.fill(Qt::transparent);
+    QPainter painter(&result); painter.drawImage(shift,0,source); return result;
+}
+void StereoImageProcessor::setStereoWindowOffset(int pixels) {
+    if (!isValid()) return;
+    m_windowOffset=qBound(-m_originalLeft.width()/2,pixels,m_originalLeft.width()/2);
+    const int left=qCeil(m_windowOffset/2.0),right=left-m_windowOffset;
+    m_left=shiftedEye(m_originalLeft,left); m_right=shiftedEye(m_originalRight,right);
+    createAnaglyph();
+}
+QImage StereoImageProcessor::stereoWindowPreview(int pixels) const {
+    if (!isValid()) return {};
+    const int width=qMin(1000,m_originalLeft.width());
+    QImage left=m_originalLeft.scaledToWidth(width,Qt::SmoothTransformation);
+    QImage right=m_originalRight.scaledToWidth(width,Qt::SmoothTransformation);
+    const int delta=qRound(pixels*double(width)/m_originalLeft.width());
+    const int shift=qCeil(delta/2.0);
+    StereoImageProcessor preview;
+    preview.createAnaglyphFromEyes(shiftedEye(left,shift),shiftedEye(right,shift-delta));
+    return preview.anaglyphImage();
+}
