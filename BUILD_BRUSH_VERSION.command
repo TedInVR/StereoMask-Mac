@@ -32,10 +32,18 @@ if [ -f "$STEREOMASK_APP/Contents/MacOS/StereoMask-bin" ]; then
     mv -f "$STEREOMASK_APP/Contents/MacOS/StereoMask-bin" "$STEREOMASK_APP/Contents/MacOS/StereoMask"
 fi
 cmake --build build-mac-brush --parallel 4
-# Put QtSvg in the bundle before plugin discovery; macdeployqt can resolve
-# the framework here even when it omits the separate qtsvg search directory.
+# Explicitly bundle QtSvg for our post-deployment dependency repair.
 mkdir -p "$STEREOMASK_APP/Contents/Frameworks"
 /usr/bin/ditto /opt/homebrew/opt/qtsvg/lib/QtSvg.framework     "$STEREOMASK_APP/Contents/Frameworks/QtSvg.framework"
+# Ensure SVG plugins are included even if macdeployqt's resolver skips them.
+for STEREOMASK_PLUGIN_ROOT in /opt/homebrew/opt/qtsvg/share/qt/plugins /opt/homebrew/opt/qtsvg/plugins /opt/homebrew/share/qt/plugins; do
+    for STEREOMASK_PLUGIN in imageformats/libqsvg.dylib iconengines/libqsvgicon.dylib; do
+        if [ -f "$STEREOMASK_PLUGIN_ROOT/$STEREOMASK_PLUGIN" ]; then
+            mkdir -p "$STEREOMASK_APP/Contents/PlugIns/$(dirname "$STEREOMASK_PLUGIN")"
+            /usr/bin/ditto "$STEREOMASK_PLUGIN_ROOT/$STEREOMASK_PLUGIN" "$STEREOMASK_APP/Contents/PlugIns/$STEREOMASK_PLUGIN"
+        fi
+    done
+done
 # macdeployqt follows the executable's LC_RPATH entries during discovery.
 STEREOMASK_SVG_PATH="/opt/homebrew/opt/qtsvg/lib"
 if ! /usr/bin/otool -l "$STEREOMASK_APP/Contents/MacOS/StereoMask" | /usr/bin/grep -Fq "path $STEREOMASK_SVG_PATH (offset"; then
@@ -48,17 +56,9 @@ if /opt/homebrew/opt/qtbase/bin/macdeployqt "$STEREOMASK_APP" -always-overwrite 
 else
     STEREOMASK_DEPLOY_STATUS=1
 fi
-# macdeployqt can check old signatures before our final repair/signing step.
-# Defer only signature errors; missing dependencies still stop deployment.
-if /usr/bin/grep '^ERROR:' build-mac-brush/deployment.log | /usr/bin/grep -Ev 'codesign verification error:|invalid signature \(code or signature have been modified\)' > build-mac-brush/deployment-errors.log; then
-    cat build-mac-brush/deployment-errors.log
-    echo "Packaging dependencies failed. Send deployment.log to ChatGPT."
-    exit 1
-fi
-if [ "$STEREOMASK_DEPLOY_STATUS" -ne 0 ] && ! /usr/bin/grep -q 'codesign verification error:' build-mac-brush/deployment.log; then
-    echo "Packaging command failed. Send deployment.log to ChatGPT."
-    exit 1
-fi
+# QtSvg is explicitly bundled. Defer only its resolver message and old
+# signatures; the repair below must resolve every dependency and sign strictly.
+python3 scripts/check_deployment.py build-mac-brush/deployment.log "$STEREOMASK_DEPLOY_STATUS" "$STEREOMASK_APP"
 unset DYLD_FRAMEWORK_PATH
 # Rewrite all Homebrew aliases to bundled libraries, then verify and ad-hoc sign.
 python3 scripts/repair_macos_bundle.py "$STEREOMASK_APP" 2>&1 | tee build-mac-brush/bundle-repair.log

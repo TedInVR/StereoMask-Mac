@@ -346,3 +346,6 @@ The next Mac log still reported unresolved QtSvg during plugin discovery and an 
 - Help/UI suite passed, including dock/actions, exact embedded guide browser URL, smart/paired/move tools, shared Settings controls, cancellation without mutation, color picker and clickable creator attribution. Inspected offscreen UI screenshot.
 - Update suite passed after adjusting network version fixtures for 2.1.1: newer/equal/older, trusted URLs, errors, size limits and duplicate requests.
 - 12 Python bundle/installer tests passed. bash -n passed both scripts. HTML internal navigation anchors were checked. Mac execution remains the final platform check.
+
+### R11 Mac deployment follow-up — 2026-10-11
+The user’s native Apple Silicon build reached 100%, but macdeployqt still could not resolve QtSvg from its plugin search paths. Explicitly copy SVG plugins when available and defer only the exact QtSvg resolver error (when its framework exists) and stale signature messages. All other deployment errors stop. The existing repair must then resolve every Mach-O load to bundled dependencies and verify strict signing before installation. Added deployment-log regression checks for missing SVG, mixed/unrelated errors, silent failures and known signature messages. This is not blanket suppression of deployment failures; real Mac runtime verification remains pending.
