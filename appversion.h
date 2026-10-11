@@ -1,4 +1,4 @@
 #ifndef APPVERSION_H
 #define APPVERSION_H
-inline constexpr const char *STEREOMASK_VERSION = "2.1.7";
+inline constexpr const char *STEREOMASK_VERSION = "2.1.8";
 #endif

@@ -24,6 +24,7 @@
 #include <QPushButton>
 #include <QKeyEvent>
 #include <QTextBrowser>
+#include <QTextEdit>
 #include <QLineEdit>
 #include <QTableWidget>
 #include <QCheckBox>
@@ -292,6 +293,37 @@ int main(int argc, char **argv) {
         next->click();if(guidedView->points().size()!=4 || !guidedView->isImageLoaded())return 71;
     }
     std::cout<<"Main Menu coverage, direct Stereo Window, readable/custom shortcuts with persistence and defaults, guided gates/branches/back/save: PASS\n";
+    {
+        MainWindow creative;auto creativeView=qobject_cast<StereoViewWidget *>(creative.centralWidget());creativeView->setAutoSave(false);
+        const QString path=selectionFixture.path()+"/creative.png";pair.save(path);if(!creativeView->loadImage(path))return 80;
+        bool shapeOpened=false;
+        QTimer::singleShot(0,[&]{auto dialog=creative.findChild<QDialog *>("frameShapeDialog");if(!dialog)return;auto shape=dialog->findChild<QComboBox *>("frameShapeType");auto depth=dialog->findChild<QSpinBox *>("shapeDepth");shape->setCurrentIndex(3);depth->setValue(9);dialog->resize(1200,800);QApplication::processEvents();shapeOpened=dialog->grab().save("frame-shapes.png");dialog->accept();});
+        QMetaObject::invokeMethod(&creative,"createFrameShape",Qt::DirectConnection);
+        if(!shapeOpened || creativeView->points().size()!=4 || !creativeView->points()[0].isCurve || creativeView->points()[0].disparity!=9)return 81;
+        bool shadowOpened=false;
+        QTimer::singleShot(0,[&]{auto dialog=creative.findChild<QDialog *>("pictureFrameDialog");if(!dialog)return;auto shadow=dialog->findChild<QCheckBox *>("dropShadowEnabled");if(!shadow){dialog->reject();return;}shadow->setChecked(true);shadowOpened=dialog->grab().save("drop-shadow-settings.png");dialog->accept();});
+        QMetaObject::invokeMethod(&creative,"adjustPictureFrame",Qt::DirectConnection);
+        if(!shadowOpened || !creativeView->pictureFrameSettings().shadowEnabled)return 86;
+        creativeView->undoStack()->undo();if(creativeView->pictureFrameSettings().shadowEnabled)return 87;
+        creativeView->undoStack()->undo();if(!creativeView->points().isEmpty())return 82;
+        bool textOpened=false;
+        QTimer::singleShot(0,[&]{auto dialog=creative.findChild<QDialog *>("stereoTextDialog");if(!dialog)return;dialog->findChild<QTextEdit *>("stereoTextContent")->setPlainText("Hello Stereo");dialog->findChild<QComboBox *>("speechBubbleStyle")->setCurrentIndex(2);dialog->findChild<QSpinBox *>("textDepth")->setValue(12);dialog->resize(1280,850);QApplication::processEvents();
+        auto canvas=dialog->findChild<QGraphicsView *>("textCanvas");const auto eyeSize=creativeView->image().size();
+        const QPointF tail(eyeSize.width()*0.2+20,eyeSize.height()*0.2+qMax(48,eyeSize.height()/4)+60);
+        QPoint start=canvas->mapFromScene(tail),end=canvas->mapFromScene(tail+QPointF(15,10));
+        QMouseEvent press(QEvent::MouseButtonPress,QPointF(start),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(canvas->viewport(),&press);
+        QMouseEvent move(QEvent::MouseMove,QPointF(end),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(canvas->viewport(),&move);
+        QMouseEvent release(QEvent::MouseButtonRelease,QPointF(end),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(canvas->viewport(),&release);
+        textOpened=dialog->grab().save("stereo-text-bubbles.png");dialog->accept();});
+        QMetaObject::invokeMethod(&creative,"editStereoText",Qt::DirectConnection);
+        if(!textOpened || creativeView->textObjects().size()!=1 || creativeView->textObjects()[0].text!="Hello Stereo" || creativeView->textObjects()[0].depth!=12 || creativeView->textObjects()[0].tail.y()<=creativeView->image().height()*0.2+qMax(48,creativeView->image().height()/4)+60)return 83;
+        const auto saved=creativeView->textObjects()[0];
+        QTimer::singleShot(0,[&]{auto dialog=creative.findChild<QDialog *>("stereoTextDialog");dialog->findChild<QTextEdit *>("stereoTextContent")->setPlainText("Cancel me");dialog->reject();});
+        QMetaObject::invokeMethod(&creative,"editStereoText",Qt::DirectConnection);
+        if(creativeView->textObjects()[0].text!=saved.text)return 84;
+        creativeView->undoStack()->undo();if(!creativeView->textObjects().isEmpty())return 85;
+        std::cout<<"Shape dialog Apply/undo and text/bubble editing Apply/Cancel/undo: PASS\n";
+    }
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

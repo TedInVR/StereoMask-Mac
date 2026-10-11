@@ -162,7 +162,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R17 (2.1.7)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R18 (2.1.8)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -1062,6 +1062,7 @@ void MainWindow::createToolbar()
     addToolBarBreak();auto stereoBar=addToolBar(tr("Stereo Window"));configureToolbar(stereoBar);stereoBar->addAction(windowDepth);
     addToolBarBreak();auto createBar=addToolBar(tr("Create Frame"));configureToolbar(createBar);
     auto createPoints=createBar->addAction(tr("Create with points"));createPoints->setObjectName("createFramePointsAction");connect(createPoints,&QAction::triggered,this,enterFrame);
+    auto shapes=createBar->addAction(tr("Shapes…"));shapes->setObjectName("frameShapesAction");connect(shapes,&QAction::triggered,this,&MainWindow::createFrameShape);
     createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
     addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction")});
     const QList<QList<QToolBar *>> sections={{fileViewBar},{navigationBar},{stereoBar},{createBar},{editMaskBar,transformBar},{brushBar,selectionBar,maskBar},{helpBar}};
@@ -1089,6 +1090,8 @@ void MainWindow::createToolbar()
     auto expandAll=[toggles](bool shown){for(int i=0;i<toggles.size();++i)if(i!=2)toggles[i]->setChecked(shown);};
     layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
     auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);compact->addAction(toggles[6]);
+    auto textTool=compact->addAction(tr("Text & Bubbles"));textTool->setObjectName("stereoTextAction");connect(textTool,&QAction::triggered,this,&MainWindow::editStereoText);
+    for(auto menuAction:menuBar()->actions())if(menuAction->menu() && menuAction->text()==tr("&Edit")){menuAction->menu()->addSeparator();menuAction->menu()->addAction(shapes);menuAction->menu()->addAction(textTool);}
     auto guided=compact->addAction(tr("Guided Process"));guided->setObjectName("guidedProcessAction");connect(guided,&QAction::triggered,this,&MainWindow::startGuidedProcess);
     // Widget controls stay in their sections: each is directly reachable from Main Menu.
     for(int i=0;i<sections.size();++i) {
@@ -1111,7 +1114,7 @@ void MainWindow::createToolbar()
             } else group->addAction(action);
         }
     }
-    menus->addAction(selectionsDock->toggleViewAction());menus->addMenu(layoutMenu);menus->addAction(guided);menus->addSeparator();menus->addAction(m_checkUpdatesAction);menus->addAction(about);
+    menus->addAction(selectionsDock->toggleViewAction());menus->addMenu(layoutMenu);menus->addAction(guided);menus->addAction(textTool);menus->addSeparator();menus->addAction(m_checkUpdatesAction);menus->addAction(about);
     const QString historyKey="compactLayout/history";
     selectionsDock->setVisible(preferences->value(historyKey,false).toBool());
     connect(selectionsDock,&QDockWidget::visibilityChanged,this,[this,preferences,historyKey](bool shown){if(isVisible() && !isMinimized()) preferences->setValue(historyKey,shown);});
@@ -1230,7 +1233,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r17";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r18";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1257,7 +1260,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R17 (2.1.7)</h2>"
+        tr("<h2>StereoMask Mac R18 (2.1.8)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1499,8 +1502,18 @@ void MainWindow::adjustPictureFrame() {
     auto color=new QPushButton(tr("Choose color…"),&dialog);color->setObjectName("pictureFrameColor");color->setStyleSheet(QString("background:%1").arg(settings.color.name()));form->addRow(tr("Frame color:"),color);
     connect(color,&QPushButton::clicked,&dialog,[&]{const auto next=QColorDialog::getColor(settings.color,&dialog,tr("Picture frame color"));if(next.isValid()){settings.color=next;color->setStyleSheet(QString("background:%1").arg(next.name()));}});
     layout->addLayout(form);
+    auto shadow=new QCheckBox(tr("Show drop shadow"),&dialog);shadow->setObjectName("dropShadowEnabled");shadow->setChecked(settings.shadowEnabled);form->addRow(shadow);
+    auto shadowSpin=[&](const QString &label,int min,int max,int value){auto s=new QSpinBox;s->setRange(min,max);s->setValue(value);form->addRow(label,s);return s;};
+    auto opacity=shadowSpin(tr("Shadow opacity (%):"),0,100,settings.shadowOpacity);
+    auto distance=shadowSpin(tr("Shadow distance (pixels):"),0,1000,settings.shadowDistance);
+    auto angle=shadowSpin(tr("Shadow direction (degrees):"),0,359,settings.shadowAngle);
+    auto blur=shadowSpin(tr("Shadow softness (pixels):"),0,200,settings.shadowBlur);
+    auto spread=shadowSpin(tr("Shadow spread (pixels):"),0,200,settings.shadowSpread);
+    auto shadowColor=new QPushButton(tr("Shadow color…"));form->addRow(shadowColor);
+    connect(shadowColor,&QPushButton::clicked,&dialog,[&]{auto c=QColorDialog::getColor(settings.shadowColor,&dialog);if(c.isValid())settings.shadowColor=c;});
+    auto shadowNote=new QLabel(tr("Direction: 0° right, 90° down; 45° casts down-right from light at upper left. Shadow appears only outside preserved areas, including on transparent PNG. It is clipped to the canvas and does not simulate lighting on photo objects."));shadowNote->setWordWrap(true);layout->addWidget(shadowNote);
     auto note=new QLabel(tr("The border grows outside your frame opening and follows its depth in each eye. Visible Add selections cover the border, so foreground objects appear over it. Width uses source-image pixels. Leave room inside the image edges; the border cannot extend beyond the canvas."),&dialog);note->setWordWrap(true);layout->addWidget(note);
     auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
-    if(dialog.exec()==QDialog::Accepted){settings.enabled=enabled->isChecked();settings.width=width->value();settings.style=style->currentIndex();m_viewWidget->setPictureFrameSettings(settings);}
+    if(dialog.exec()==QDialog::Accepted){settings.enabled=enabled->isChecked();settings.width=width->value();settings.style=style->currentIndex();settings.shadowEnabled=shadow->isChecked();settings.shadowOpacity=opacity->value();settings.shadowDistance=distance->value();settings.shadowAngle=angle->value();settings.shadowBlur=blur->value();settings.shadowSpread=spread->value();m_viewWidget->setPictureFrameSettings(settings);}
 }

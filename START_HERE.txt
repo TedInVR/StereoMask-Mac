@@ -1,4 +1,4 @@
-StereoMask Mac R17 / 2.1.7
+StereoMask Mac R18 / 2.1.8
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -25,4 +25,10 @@ First optional step: Stereo Window opens an anaglyph slider. Apply commits
 one undoable source-depth adjustment; Cancel leaves it unchanged. Save
 the project to keep it. Help explains the new tool and side strips.
 
-R17: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.
+R18: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.
+
+R18 additions:
+Create Frame > Shapes: choose, drag, resize and apply an editable frame.
+Edit Frame > Picture Frame: optional Drop Shadow controls.
+Text & Bubbles: fonts, stereo depth, speech/thought bubbles and draggable tails.
+All save in projects. Older versions ignore text/shadow additions; keep copies.

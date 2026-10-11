@@ -10,6 +10,7 @@
 
 #include <QUndoStack>
 #include <QPainterPath>
+#include "decorations.h"
 
 class QTimer;
 class QJsonObject;
@@ -20,7 +21,10 @@ struct PictureFrameSettings {
     int width=24;
     int style=1;
     QColor color=QColor("#9b6a35");
-    bool operator==(const PictureFrameSettings &other) const {return enabled==other.enabled && width==other.width && style==other.style && color==other.color;}
+    bool shadowEnabled=false;
+    int shadowOpacity=60, shadowDistance=24, shadowAngle=45, shadowBlur=12, shadowSpread=0;
+    QColor shadowColor=Qt::black;
+    bool operator==(const PictureFrameSettings &other) const {return enabled==other.enabled && width==other.width && style==other.style && color==other.color && shadowEnabled==other.shadowEnabled && shadowOpacity==other.shadowOpacity && shadowDistance==other.shadowDistance && shadowAngle==other.shadowAngle && shadowBlur==other.shadowBlur && shadowSpread==other.shadowSpread && shadowColor==other.shadowColor;}
 };
 
 struct SelectionObject {
@@ -81,7 +85,13 @@ public:
     int cutoutBackground() const { return m_cutoutBackground; }
     QImage revealMask(bool right) const { return right ? m_revealRight : m_revealLeft; }
     QImage openingMask(bool right, int feather = 0) const;
-    QImage exportEye(bool right) const;
+    QImage exportEye(bool right,bool includeText=true) const;
+    QVector<StereoText> textObjects() const {return m_textObjects;}
+    void setTextObjects(const QVector<StereoText> &texts);
+    void applyTextObjects(const QVector<StereoText> &texts);
+    void replaceFramePoints(const QVector<MaskPoint> &points);
+    void applyFramePoints(const QVector<MaskPoint> &points);
+    static QImage shadowOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &settings);
     void applyReveal(bool right, const QImage &mask);
     void applySmartHints(bool right, const QImage &hints, const QRect &region);
     void findEdges();
@@ -329,6 +339,7 @@ private:
     QString m_lastError;
 
     PictureFrameSettings m_pictureFrame;
+    QVector<StereoText> m_textObjects;
     QColor m_maskColor = Qt::black;
     float m_maskOpacity = 0.6f;
     int m_featherAmount = 0;

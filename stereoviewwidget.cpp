@@ -634,11 +634,15 @@ SelectionState StereoViewWidget::selectionState() const {
     return {m_selectionObjects,m_baseRevealLeft,m_baseRevealRight,m_baseOutlineLeft,m_baseOutlineRight};
 }
 
-QImage StereoViewWidget::exportEye(bool right) const {
+QImage StereoViewWidget::exportEye(bool right,bool includeText) const {
     const QImage image=right ? m_processor.rightImage() : m_processor.leftImage();
     QByteArray key;QDataStream stream(&key,QIODevice::WriteOnly);
     stream<<image.cacheKey()<<m_smartRevision<<m_revealLeft.cacheKey()<<m_revealRight.cacheKey()
           <<m_pictureFrame.enabled<<m_pictureFrame.width<<m_pictureFrame.style<<m_pictureFrame.color
+          <<m_pictureFrame.shadowEnabled<<m_pictureFrame.shadowOpacity<<m_pictureFrame.shadowDistance<<m_pictureFrame.shadowAngle<<m_pictureFrame.shadowBlur<<m_pictureFrame.shadowSpread<<m_pictureFrame.shadowColor
+          <<includeText;
+    if(includeText) for(const auto &text:m_textObjects)stream<<QJsonDocument(textToJson(text)).toJson(QJsonDocument::Compact);
+    stream
           <<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
     for (const auto &point:m_points)
         stream<<point.pos<<point.disparity<<point.isCurve<<point.cp1<<point.cp2<<point.cp1Disparity<<point.cp2Disparity;
@@ -649,9 +653,15 @@ QImage StereoViewWidget::exportEye(bool right) const {
     const QImage opening=openingMask(right,appearance && m_previewFeatherEnabled ? m_featherAmount : 0);
     cached=appearance ? maskedPreviewEye(image,opening,m_maskColor,m_maskOpacity)
                       : cutoutEye(image,m_points,right,opening,m_cutoutBackground,m_cutoutColor,true);
+    if(m_pictureFrame.shadowEnabled && m_points.size()>=3) {
+        QPainter painter(&cached);painter.drawImage(0,0,shadowOverlay(image.size(),m_points,right,openingMask(right),m_pictureFrame));
+    }
     if (m_pictureFrame.enabled && m_points.size()>=3) {
         QPainter framePainter(&cached);
         framePainter.drawImage(0,0,pictureFrameOverlay(image.size(),m_points,right,openingMask(right),m_pictureFrame));
+    }
+    if(includeText && !m_textObjects.isEmpty()) {
+        QPainter painter(&cached);painter.drawImage(0,0,textOverlay(image.size(),m_textObjects,right,revealMask(right)));
     }
     cachedKey=key;return cached;
 }
@@ -987,12 +997,23 @@ void StereoViewWidget::brushAt(const QPoint &pos) {
 void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
     m_processor.setStereoWindowOffset(obj["stereoWindowOffset"].toInt(0));
     const auto frame=obj["pictureFrame"].toObject();
-    m_pictureFrame=PictureFrameSettings{};
+    m_textObjects.clear();m_pictureFrame=PictureFrameSettings{};
     m_pictureFrame.enabled=frame["enabled"].toBool(false);
     m_pictureFrame.width=qBound(1,frame["width"].toInt(24),1000);
     m_pictureFrame.style=qBound(0,frame["style"].toInt(1),2);
     const QColor frameColor(frame["color"].toString("#9b6a35"));
     if (frameColor.isValid()) m_pictureFrame.color=frameColor;
+    m_pictureFrame.shadowEnabled=frame["shadowEnabled"].toBool(false);
+    m_pictureFrame.shadowOpacity=qBound(0,frame["shadowOpacity"].toInt(60),100);
+    m_pictureFrame.shadowDistance=qBound(0,frame["shadowDistance"].toInt(24),1000);
+    m_pictureFrame.shadowAngle=qBound(0,frame["shadowAngle"].toInt(45),359);
+    m_pictureFrame.shadowBlur=qBound(0,frame["shadowBlur"].toInt(12),200);
+    m_pictureFrame.shadowSpread=qBound(0,frame["shadowSpread"].toInt(),200);
+    QColor shadowColor(frame["shadowColor"].toString());if(shadowColor.isValid())m_pictureFrame.shadowColor=shadowColor;
+    for(const auto &entry:obj["stereoText"].toArray()) {
+        if(m_textObjects.size()>=100)break;
+        if(entry.isObject())m_textObjects.append(textFromJson(entry.toObject(),m_processor.leftImage().size()));
+    }
     cancelLasso();
     m_completedLeft=decodeLassoPath(obj["lassoOutlineLeft"].toObject());
     m_completedRight=decodeLassoPath(obj["lassoOutlineRight"].toObject());
@@ -1029,7 +1050,7 @@ bool StereoViewWidget::closeProject() {
     m_baseRevealLeft=QImage();m_baseRevealRight=QImage();m_revealLeft=QImage();m_revealRight=QImage();m_beforeStroke=QImage();
     m_completedLeft=QPainterPath();m_completedRight=QPainterPath();m_baseOutlineLeft=QPainterPath();m_baseOutlineRight=QPainterPath();
     m_smartHintsLeft=QImage();m_smartHintsRight=QImage();m_smartRegionLeft=QRect();m_smartRegionRight=QRect();++m_smartRevision;
-    m_pictureFrame=PictureFrameSettings{};m_exportKeyLeft.clear();m_exportKeyRight.clear();m_exportCacheLeft=QImage();m_exportCacheRight=QImage();
+    m_textObjects.clear();m_pictureFrame=PictureFrameSettings{};m_exportKeyLeft.clear();m_exportKeyRight.clear();m_exportCacheLeft=QImage();m_exportCacheRight=QImage();
     m_zoom=1;m_panOffset=QPointF();m_isSelecting=false;m_isPanning=false;m_spacePan=false;m_isFreehandDrawing=false;m_freehandPoints.clear();
     m_autoMaskDebugFrames.clear();m_pendingAutoMaskPoints.clear();m_pendingAutoMaskText.clear();
     m_brushMode=0;m_pickingColor=false;m_cursorVisible=false;m_hasBrushPoint=false;m_cutout=false;m_cutoutBackground=4;
@@ -1042,7 +1063,7 @@ bool StereoViewWidget::loadImage(const QString &fileName)
     if (m_refining) { m_lastError=tr("Wait for Find edges to finish before opening another image."); return false; }
     cancelLasso();
     if (m_processor.loadSideBySide(fileName)) {
-        m_pictureFrame=PictureFrameSettings{};
+        m_textObjects.clear();m_pictureFrame=PictureFrameSettings{};
         m_selectionObjects.clear(); m_baseRevealLeft=QImage(); m_baseRevealRight=QImage();
         m_baseOutlineLeft=QPainterPath(); m_baseOutlineRight=QPainterPath();
         emit selectionObjectsChanged();
@@ -1118,7 +1139,10 @@ bool StereoViewWidget::saveProject()
     obj["selectionObjects"]=selectionObjectsJson();
     obj["brushVersion"] = 5;
     obj["stereoWindowOffset"] = stereoWindowOffset();
-    obj["pictureFrame"]=QJsonObject{{"enabled",m_pictureFrame.enabled},{"width",m_pictureFrame.width},{"style",m_pictureFrame.style},{"color",m_pictureFrame.color.name(QColor::HexArgb)}};
+    obj["pictureFrame"]=QJsonObject{{"enabled",m_pictureFrame.enabled},{"width",m_pictureFrame.width},{"style",m_pictureFrame.style},{"color",m_pictureFrame.color.name(QColor::HexArgb)},
+        {"shadowEnabled",m_pictureFrame.shadowEnabled},{"shadowOpacity",m_pictureFrame.shadowOpacity},{"shadowDistance",m_pictureFrame.shadowDistance},
+        {"shadowAngle",m_pictureFrame.shadowAngle},{"shadowBlur",m_pictureFrame.shadowBlur},{"shadowSpread",m_pictureFrame.shadowSpread},{"shadowColor",m_pictureFrame.shadowColor.name(QColor::HexArgb)}};
+    QJsonArray texts;for(const auto &text:m_textObjects)texts.append(textToJson(text));obj["stereoText"]=texts;obj["stereoTextVersion"]=1;
     obj["lassoOutlineLeft"]=encodeLassoPath(m_completedLeft);
     obj["lassoOutlineRight"]=encodeLassoPath(m_completedRight);
     obj["smartHintsLeftPNG"] = encodeReveal(m_smartHintsLeft);
@@ -1318,8 +1342,8 @@ void StereoViewWidget::updateAnaglyphIfActive()
 {
     if (m_anaglyphMode && m_processor.isValid()) {
         const bool preview=m_maskPreviewEnabled || m_cleanPreviewEnabled;
-        m_processor.createAnaglyphFromEyes(preview ? exportEye(false) : m_processor.leftImage(),
-                                          preview ? exportEye(true) : m_processor.rightImage(),m_swapSides);
+        m_processor.createAnaglyphFromEyes((preview || !m_textObjects.isEmpty()) ? exportEye(false) : m_processor.leftImage(),
+                                          (preview || !m_textObjects.isEmpty()) ? exportEye(true) : m_processor.rightImage(),m_swapSides);
     }
 }
 
@@ -1759,6 +1783,24 @@ void StereoViewWidget::drawAutoMaskDebugOverlay(QPainter &painter, const QRect &
 
 void StereoViewWidget::addPoint(const QPointF &pos, float disparity, int index)
 {
+    if(index>=0 && index<m_points.size() && m_points.size()>=3) {
+        const int previous=(index+m_points.size()-1)%m_points.size();
+        const auto a=m_points[previous],b=m_points[index];
+        if(a.isCurve) {
+            auto mix=[](QPointF a,QPointF b,double t){return a*(1-t)+b*t;};
+            double best=0.5,distance=std::numeric_limits<double>::max();
+            for(int i=1;i<200;++i){double t=i/200.0,u=1-t;QPointF p=a.pos*u*u*u+a.cp1*3*u*u*t+a.cp2*3*u*t*t+b.pos*t*t*t;double d=QLineF(pos,p).length();if(d<distance){distance=d;best=t;}}
+            const double t=best;
+            const auto ab=mix(a.pos,a.cp1,t),bc=mix(a.cp1,a.cp2,t),cd=mix(a.cp2,b.pos,t);
+            const auto abc=mix(ab,bc,t),bcd=mix(bc,cd,t),center=mix(abc,bcd,t);
+            auto scalar=[t](double a,double b){return a*(1-t)+b*t;};
+            const double da=scalar(a.disparity,a.cp1Disparity),db=scalar(a.cp1Disparity,a.cp2Disparity),dc=scalar(a.cp2Disparity,b.disparity);
+            const double dab=scalar(da,db),dbc=scalar(db,dc),depth=scalar(dab,dbc);
+            auto points=m_points;points[previous].cp1=ab;points[previous].cp2=abc;points[previous].cp1Disparity=da;points[previous].cp2Disparity=dab;
+            MaskPoint inserted{center,float(depth)};inserted.isCurve=true;inserted.cp1=bcd;inserted.cp2=cd;inserted.cp1Disparity=dbc;inserted.cp2Disparity=dc;points.insert(index,inserted);
+            replaceFramePoints(points);return;
+        }
+    }
     m_undoStack->push(new AddPointCommand(this, {pos, disparity}, index));
     updateAnaglyphIfActive();
     notifySelectionState();
@@ -2015,7 +2057,10 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
                 painter.fillRect(target,QBrush(checker));
             }
             painter.drawImage(target,rendered);
-        } else painter.drawImage(target,img);
+        } else {
+            painter.drawImage(target,img);
+            if(!m_anaglyphMode && !m_textObjects.isEmpty())painter.drawImage(target,textOverlay(img.size(),m_textObjects,isRight,revealMask(isRight)));
+        }
         if (m_cleanPreviewEnabled) { painter.restore(); return; }
         const QImage reveal = revealMask(isRight);
         if (!m_anaglyphMode && !m_maskPreviewEnabled && !reveal.isNull()) {
@@ -2937,9 +2982,42 @@ public:
 }
 void StereoViewWidget::setPictureFrameSettings(const PictureFrameSettings &settings) {
     if (!isImageLoaded()) return;
-    auto next=settings;next.width=qBound(1,next.width,1000);next.style=qBound(0,next.style,2);if(!next.color.isValid())return;
+    auto next=settings;next.shadowOpacity=qBound(0,next.shadowOpacity,100);next.shadowDistance=qBound(0,next.shadowDistance,1000);next.shadowBlur=qBound(0,next.shadowBlur,200);next.shadowSpread=qBound(0,next.shadowSpread,200);next.shadowAngle=qBound(0,next.shadowAngle,359);next.width=qBound(1,next.width,1000);next.style=qBound(0,next.style,2);if(!next.color.isValid())return;
     if (!(next==m_pictureFrame)) m_undoStack->push(new PictureFrameCommand(this,next));
 }
 void StereoViewWidget::applyPictureFrameSettings(const PictureFrameSettings &settings) {
     m_pictureFrame=settings;updateAnaglyphIfActive();update();if(m_autoSave)saveProject();
 }
+
+QImage StereoViewWidget::shadowOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &s) {
+    QImage result(size,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::transparent);
+    if(!s.shadowEnabled || points.size()<3 || s.shadowOpacity==0)return result;
+    auto path=createImageMaskPath(points,QRectF(QPointF(0,0),QSizeF(size)),1.0f,right,false);
+    const double spread=s.shadowSpread+(s.enabled?s.width:0);
+    if(spread>0){QPainterPathStroker stroker;stroker.setWidth(spread*2);path=path.united(stroker.createStroke(path));}
+    const double angle=qDegreesToRadians(double(s.shadowAngle));
+    QImage alpha(size,QImage::Format_Grayscale8);alpha.fill(0);
+    {QPainter p(&alpha);p.setRenderHint(QPainter::Antialiasing);p.translate(qCos(angle)*s.shadowDistance,qSin(angle)*s.shadowDistance);p.fillPath(path,Qt::white);}
+    if(s.shadowBlur>0){cv::Mat mask(alpha.height(),alpha.width(),CV_8UC1,alpha.bits(),alpha.bytesPerLine());cv::GaussianBlur(mask,mask,cv::Size(),qMax(0.5,s.shadowBlur/2.0),qMax(0.5,s.shadowBlur/2.0),cv::BORDER_CONSTANT);}
+    for(int y=0;y<size.height();++y){auto row=reinterpret_cast<QRgb *>(result.scanLine(y));const auto a=alpha.constScanLine(y);for(int x=0;x<size.width();++x){QColor c=s.shadowColor;c.setAlpha(a[x]*s.shadowOpacity/100);row[x]=qPremultiply(c.rgba());}}
+    if(opening.size()==size){QPainter p(&result);p.setCompositionMode(QPainter::CompositionMode_DestinationOut);p.drawImage(0,0,opening);}
+    return result;
+}
+namespace {
+class TextObjectsCommand : public QUndoCommand {
+    StereoViewWidget *view;QVector<StereoText> before,after;
+public:
+    TextObjectsCommand(StereoViewWidget *v,const QVector<StereoText> &next):view(v),before(v->textObjects()),after(next){setText(QObject::tr("Edit stereo text and bubbles"));}
+    void undo()override{view->applyTextObjects(before);}void redo()override{view->applyTextObjects(after);}
+};
+class FrameShapeCommand : public QUndoCommand {
+    StereoViewWidget *view;QVector<MaskPoint> before,after;
+public:
+    FrameShapeCommand(StereoViewWidget *v,const QVector<MaskPoint> &next):view(v),before(v->points()),after(next){setText(QObject::tr("Create or reshape frame"));}
+    void undo()override{view->applyFramePoints(before);}void redo()override{view->applyFramePoints(after);}
+};
+}
+void StereoViewWidget::setTextObjects(const QVector<StereoText> &texts){if(isImageLoaded())m_undoStack->push(new TextObjectsCommand(this,texts));}
+void StereoViewWidget::applyTextObjects(const QVector<StereoText> &texts){m_textObjects=texts;m_exportKeyLeft.clear();m_exportKeyRight.clear();updateAnaglyphIfActive();update();if(m_autoSave)saveProject();}
+void StereoViewWidget::replaceFramePoints(const QVector<MaskPoint> &points){if(isImageLoaded() && !m_refining && !m_draggingPolygon && !hasLasso())m_undoStack->push(new FrameShapeCommand(this,points));}
+void StereoViewWidget::applyFramePoints(const QVector<MaskPoint> &points){m_points=points;m_selectedIndices.clear();for(int i=0;i<points.size();++i)m_selectedIndices.append(i);m_selectedPointIndex=-1;updateAnaglyphIfActive();notifySelectionState();notifyMaskState();update();if(m_autoSave)saveProject();}

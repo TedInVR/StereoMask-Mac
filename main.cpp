@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     qDebug() << "------------------------------";
 
     MainWindow w;
-    w.setWindowTitle("StereoMask Mac R17 (2.1.7)");
+    w.setWindowTitle("StereoMask Mac R18 (2.1.8)");
     w.showMaximized();
     QTimer::singleShot(0,&w,[&w] {
 #ifdef Q_OS_MACOS

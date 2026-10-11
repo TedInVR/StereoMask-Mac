@@ -59,7 +59,7 @@ QString fixedKeys() {return QStringLiteral(
 void MainWindow::setupKeyboardShortcuts() {
     QSettings prefs;
     QList<QObject *> owners;
-    const QStringList extra={"guidedProcessAction","stereoWindowAction","addFramePointAction","editFramePointsAction","keyboardShortcutsAction","pictureFrameAction","enlargeFrameAction","shrinkFrameAction"};
+    const QStringList extra={"guidedProcessAction","stereoWindowAction","addFramePointAction","editFramePointsAction","keyboardShortcutsAction","pictureFrameAction","enlargeFrameAction","shrinkFrameAction","frameShapesAction","stereoTextAction"};
     for(auto action:findChildren<QAction *>())if(extra.contains(action->objectName()) || (!action->shortcuts().isEmpty() && action->objectName()!="applyLassoAction" && action->shortcuts().first()!=QKeySequence::Delete))owners<<action;
     for(auto shortcut:findChildren<QShortcut *>())owners<<shortcut;
     for(auto owner:owners) {
