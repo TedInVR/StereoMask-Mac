@@ -161,7 +161,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R15 (2.1.5)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R16 (2.1.6)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -225,6 +225,7 @@ MainWindow::MainWindow(QWidget *parent)
     resize(1200, 800);
 
     setupConnections();
+    setupKeyboardShortcuts();
 
     QTimer::singleShot(200, this, [this](){
         StartupSplash *splash = new StartupSplash(this);
@@ -259,9 +260,9 @@ void MainWindow::createMenus()
 {
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("&New Project (Open Image)..."), QKeySequence::New, this, &MainWindow::newProject);
-    fileMenu->addAction(tr("&Open Mask Project..."), QKeySequence::Open, this, &MainWindow::openProject);
+    fileMenu->addAction(tr("&Open Project..."), QKeySequence::Open, this, &MainWindow::openProject);
     
-    m_recentFilesMenu = fileMenu->addMenu(tr("Recent Projects"));
+    m_recentFilesMenu = fileMenu->addMenu(tr("Open Recent"));m_recentFilesMenu->setObjectName("openRecentMenu");
     for (int i = 0; i < 5; ++i) {
         m_recentFileActions[i] = m_recentFilesMenu->addAction(QString(), this, &MainWindow::openRecentFile);
         m_recentFileActions[i]->setVisible(false);
@@ -270,10 +271,10 @@ void MainWindow::createMenus()
 
     auto closeProjectAction=fileMenu->addAction(tr("Close Project"),QKeySequence(Qt::CTRL | Qt::Key_W),this,&MainWindow::closeProject);
     closeProjectAction->setObjectName("closeProjectAction");
-    fileMenu->addAction(tr("&Save Mask Project"), QKeySequence::Save, this, &MainWindow::saveProject);
+    fileMenu->addAction(tr("&Save Project"), QKeySequence::Save, this, &MainWindow::saveProject);
     fileMenu->addAction(tr("&Export Image..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this, &MainWindow::exportImage);
     auto quitAction=new QAction(tr("Quit StereoMask"),this);quitAction->setShortcut(QKeySequence::Quit);addAction(quitAction);connect(quitAction,&QAction::triggered,this,&QWidget::close);
-    fileMenu->removeAction(m_recentFilesMenu->menuAction());
+
 
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     QAction *undoAction = m_viewWidget->undoStack()->createUndoAction(this, tr("&Undo"));
@@ -286,12 +287,14 @@ void MainWindow::createMenus()
 
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("User Guide…"), this, &MainWindow::showHelp);
+    auto keys=helpMenu->addAction(tr("Keyboard Shortcuts…"),this,&MainWindow::showKeyboardShortcuts);keys->setObjectName("keyboardShortcutsAction");
     m_checkUpdatesAction = helpMenu->addAction(tr("Check for Updates…"), this, &MainWindow::checkForUpdates);
     helpMenu->addAction(tr("About StereoMask"), this, &MainWindow::showAbout);
 }
 
 void MainWindow::updateRecentFileActions()
 {
+    m_recentFilesMenu->menuAction()->setEnabled(!m_settings.recentFiles.isEmpty());
     for (int i = 0; i < 5; ++i) {
         if (i < m_settings.recentFiles.size()) {
             QString text = QString("&%1 %2").arg(i + 1).arg(QFileInfo(m_settings.recentFiles[i]).fileName());
@@ -309,7 +312,8 @@ void MainWindow::openRecentFile()
     QAction *action = qobject_cast<QAction *>(sender());
     if (action) {
         QString path = action->data().toString();
-        if (m_viewWidget->loadProject(path)) {
+        const bool loaded=QFileInfo(path).suffix().compare("msk",Qt::CaseInsensitive)==0 ? m_viewWidget->loadProject(path) : m_viewWidget->loadImage(path);
+        if (loaded) {
             m_settings.addRecentFile(path);
             m_settings.lastFolder = QFileInfo(path).absolutePath();
             m_settings.save();
@@ -528,7 +532,7 @@ void MainWindow::createToolbar()
     QAction *saveAction = addToolAction(fileViewBar, customIcon("save"), tr("Save"), tr("Save Mask Project (Command+S)"));
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
 
-    QAction *exportAction = addToolAction(fileViewBar, customIcon("export"), tr("Export"), tr("Export Masked Image"));
+    QAction *exportAction = addToolAction(fileViewBar, customIcon("export"), tr("Export"), tr("Export Image"));
     connect(exportAction, &QAction::triggered, this, &MainWindow::exportImage);
     fileViewBar->addSeparator();
 
@@ -568,7 +572,7 @@ void MainWindow::createToolbar()
 
     fileViewBar->addSeparator();
     addToolGroupLabel(fileViewBar, tr("App"));
-    QAction *settings = addToolAction(fileViewBar, customIcon("settings"), tr("Settings"), tr("Mask Settings"));
+    QAction *settings = addToolAction(fileViewBar, customIcon("settings"), tr("Background & Export Settings"), tr("Outside-area color/opacity, feathering, export padding and other settings"));
     connect(settings, &QAction::triggered, this, &MainWindow::showSettings);
     QAction *help = addToolAction(fileViewBar, style()->standardIcon(QStyle::SP_MessageBoxQuestion), tr("Help"), tr("Open the User Guide in your web browser"));
     connect(help, &QAction::triggered, this, &MainWindow::showHelp);
@@ -618,9 +622,11 @@ void MainWindow::createToolbar()
     configureToolbar(transformBar);
 
     addToolGroupLabel(transformBar, tr("Scale"));
-    QAction *scaleUp = addToolAction(transformBar, customIcon("scaleUp"), tr("Up"), tr("Scale Up"));
+    QAction *scaleUp = addToolAction(transformBar, customIcon("scaleUp"), tr("Enlarge Frame"), tr("Enlarge the selected frame points by 10%; select all frame points to resize the whole frame."));
+    scaleUp->setObjectName("enlargeFrameAction");
     connect(scaleUp, &QAction::triggered, this, [this](){ m_viewWidget->transformSelectedPoints(1.1f, 1.1f, 0, 0); });
-    QAction *scaleDown = addToolAction(transformBar, customIcon("scaleDown"), tr("Down"), tr("Scale Down"));
+    QAction *scaleDown = addToolAction(transformBar, customIcon("scaleDown"), tr("Shrink Frame"), tr("Shrink the selected frame points by 10%; select all frame points to resize the whole frame."));
+    scaleDown->setObjectName("shrinkFrameAction");
     connect(scaleDown, &QAction::triggered, this, [this](){ m_viewWidget->transformSelectedPoints(0.9f, 0.9f, 0, 0); });
     transformBar->addSeparator();
 
@@ -730,6 +736,7 @@ void MainWindow::createToolbar()
     };
     connect(autoMaskButton, &QToolButton::clicked, this, runAutoMask);
     connect(autoMaskMenu, &QMenu::triggered, this, runAutoMask);
+    autoMaskMenu->setTitle(tr("Auto Frame"));
     autoMaskButton->setMenu(autoMaskMenu);
     QAction *autoMaskWidgetAction=maskBar->addWidget(autoMaskButton);
 
@@ -754,7 +761,7 @@ void MainWindow::createToolbar()
     QComboBox *brushBackground = new QComboBox;
     brushBackground->addItems({tr("Transparent (PNG)"), tr("Black"), tr("White")});
     brushBar->addWidget(brushBackground);
-    brushBackground->addItem(tr("Custom cutout color..."));
+    brushBackground->addItem(tr("Choose Solid Color..."));
     brushBackground->addItem(tr("Match preview"));
     brushBackground->setObjectName("exportBackgroundCombo");
     brushBackground->setCurrentIndex(m_viewWidget->cutoutBackground());
@@ -786,7 +793,8 @@ void MainWindow::createToolbar()
     connect(cancelOutline,&QAction::triggered,m_viewWidget,&StereoViewWidget::cancelUnfinishedLasso);
     addToolBarBreak();
     QToolBar *navigationBar=addToolBar(tr("View navigation"));
-    QAction *clearPaint=navigationBar->addAction(tr("Clear painted reveal"));
+    QAction *clearPaint=navigationBar->addAction(tr("Clear Foreground Selections"));
+    clearPaint->setToolTip(tr("Remove all brush and lasso preservation in both eyes, keeping your basic frame. Undo restores the selections."));
     connect(clearPaint,&QAction::triggered,m_viewWidget,&StereoViewWidget::clearPaintedReveal);
     QAction *fit=navigationBar->addAction(tr("Fit view"));
     fit->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
@@ -851,13 +859,13 @@ void MainWindow::createToolbar()
         }
     });
 
-    QAction *color = addToolAction(maskBar, customIcon("color"), tr("Mask color"), tr("Change the same mask color used in Settings and Match preview export"));
+    QAction *color = addToolAction(maskBar, customIcon("color"), tr("Background Color"), tr("Set the outside-area color for Match preview. Opacity blends it over the photo; solid Custom Color is a separate background choice."));
     color->setObjectName("maskColorAction");
     connect(color, &QAction::triggered, this, [this](){
         QColor c = QColorDialog::getColor(m_viewWidget->maskColor(), this, tr("Select Mask Color"));
         if (c.isValid()) m_viewWidget->setMaskColor(c);
     });
-    QAction *pickColor=addToolAction(maskBar,customIcon("eyedropper"),tr("Pick mask color"),tr("Sample the mask color from either source image. Uses the same setting as Mask color and Settings. Escape cancels."));
+    QAction *pickColor=addToolAction(maskBar,customIcon("eyedropper"),tr("Sample Background Color"),tr("Sample the Match preview background color from the image. For a solid sampled color choose Match preview and 100% opacity. Escape cancels."));
     pickColor->setObjectName("pickMaskColorAction");
     connect(pickColor,&QAction::triggered,this,[this,anaglyph,pan] {
         anaglyph->setChecked(false);
@@ -867,10 +875,10 @@ void MainWindow::createToolbar()
         statusBar()->showMessage(tr("Click either source image to sample the mask color. Escape cancels."));
     });
     connect(m_viewWidget,&StereoViewWidget::maskColorPicked,this,[this](const QColor &color) {
-        statusBar()->showMessage(tr("Mask color: %1").arg(color.name()));
+        statusBar()->showMessage(tr("Background color: %1").arg(color.name()));
     });
 
-    QAction *maskPreview = addToolAction(maskBar, customIcon("autoMask"), tr("Preview Mask"), tr("Preview the selected export appearance, including ordered foreground selections. Match preview uses mask color and opacity; cutout modes use their selected background."));
+    QAction *maskPreview = addToolAction(maskBar, customIcon("autoMask"), tr("Preview Result"), tr("Preview the selected export appearance, including ordered foreground selections. Match preview uses mask color and opacity; cutout modes use their selected background."));
     maskPreview->setCheckable(true);
     maskPreview->setChecked(m_viewWidget->maskPreviewEnabled());
     connect(maskPreview, &QAction::toggled, m_viewWidget, &StereoViewWidget::setMaskPreviewEnabled);
@@ -888,7 +896,7 @@ void MainWindow::createToolbar()
     m_opacitySpin->setObjectName("maskOpacitySpin");
     m_opacitySpin->setRange(0, 100);
     m_opacitySpin->setSuffix("%");
-    m_opacitySpin->setToolTip(tr("Quick Mask Opacity"));
+    m_opacitySpin->setToolTip(tr("Match preview background opacity; solid and transparent background modes ignore this setting"));
     m_opacitySpin->setValue(m_viewWidget->maskOpacity() * 100);
     connect(m_opacitySpin, &QSpinBox::valueChanged, this, [this](int v){
         m_viewWidget->setMaskOpacity(v / 100.0f);
@@ -1021,7 +1029,7 @@ void MainWindow::createToolbar()
     for(auto bar:{fileViewBar,editMaskBar,transformBar,maskBar,brushBar,selectionBar,navigationBar})bar->clear();
     auto populate=[](QToolBar *bar,const QList<QAction *> &actions){for(auto action:actions)bar->addAction(action);};
     fileViewBar->setWindowTitle(tr("File"));
-    populate(fileViewBar,{newAction,openAction,findChild<QAction *>("closeProjectAction"),saveAction,exportAction});
+    populate(fileViewBar,{newAction,openAction,m_recentFilesMenu->menuAction(),findChild<QAction *>("closeProjectAction"),saveAction,exportAction});
     findChild<QAction *>("closeProjectAction")->setText(tr("Close"));
     navigationBar->setWindowTitle(tr("View"));
     populate(navigationBar,{fit,zoomIn,zoomOut,pan,swap,anaglyph,maskPreview,cleanPreview,previewFeather});
@@ -1034,8 +1042,15 @@ void MainWindow::createToolbar()
         statusBar()->showMessage(tr("Right-click an edge to add a point; left-drag dots to move them. Select dots and Delete to remove them."),8000);
     };
     connect(editFrame,&QAction::triggered,this,enterFrame);
+    auto addFramePoint=editMaskBar->addAction(tr("Add Point"));addFramePoint->setObjectName("addFramePointAction");
+    addFramePoint->setToolTip(tr("Click to enter frame editing, then right-click an existing frame edge away from a dot. Left-drag the new dot into place. Existing dots remain."));
+    connect(addFramePoint,&QAction::triggered,this,enterFrame);
+    deleteSelected->setText(tr("Delete Point"));deleteSelected->setToolTip(tr("Select frame dots with a left-click (Command-click for multiple dots), then click Delete Point or press Delete. Undo restores them. While editing a lasso, Delete removes its latest segment."));
     populate(editMaskBar,{undo,redo,deleteSelected,clear,alignLeft,alignRight,alignTop,alignBottom,alignDepth,pictureFrame,lockH,lockV,snap});
-    transformBar->setWindowTitle(tr("Edit Frame transforms"));populate(transformBar,transformActions);
+    transformBar->setWindowTitle(tr("Edit Frame transforms"));
+    addToolGroupLabel(transformBar,tr("Scale"));populate(transformBar,{scaleUp,scaleDown});transformBar->addSeparator();
+    addToolGroupLabel(transformBar,tr("Move"));populate(transformBar,{shiftLeft,shiftRight,shiftUp,shiftDown});transformBar->addSeparator();
+    addToolGroupLabel(transformBar,tr("Curve / Rotate"));transformBar->addAction(curve);for(auto rotation:m_rotationActions)transformBar->addAction(rotation);
     auto depthLabel=new QLabel(tr("Frame point depth: "));editMaskBar->addWidget(depthLabel);
     auto frameDepth=new QSpinBox;frameDepth->setObjectName("framePointDepth");frameDepth->setRange(-10000,10000);frameDepth->setSuffix(tr(" px"));editMaskBar->addWidget(frameDepth);
     connect(frameDepth,QOverload<int>::of(&QSpinBox::valueChanged),this,&MainWindow::updatePointDisparity);
@@ -1047,32 +1062,55 @@ void MainWindow::createToolbar()
     addToolBarBreak();auto createBar=addToolBar(tr("Create Frame"));configureToolbar(createBar);
     auto createPoints=createBar->addAction(tr("Create with points"));createPoints->setObjectName("createFramePointsAction");connect(createPoints,&QAction::triggered,this,enterFrame);
     createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
-    addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);populate(helpBar,{help,m_checkUpdatesAction,about});
+    addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction")});
     const QList<QList<QToolBar *>> sections={{fileViewBar},{navigationBar},{stereoBar},{createBar},{editMaskBar,transformBar},{brushBar,selectionBar,maskBar},{helpBar}};
     const QStringList names={tr("File"),tr("View"),tr("Stereo Window"),tr("Create Frame"),tr("Edit Frame"),tr("Out-of-Frame"),tr("Help")};
     for(const auto &rows:sections)for(auto row:rows){removeToolBarBreak(row);removeToolBar(row);}
     bool firstRow=true;for(const auto &rows:sections)for(auto row:rows){if(!firstRow)addToolBarBreak();addToolBar(row);firstRow=false;}
     auto compact=new QToolBar(tr("Control sections"),this);compact->setObjectName("compactControls");configureToolbar(compact);
     insertToolBar(fileViewBar,compact);insertToolBarBreak(fileViewBar);
-    auto menus=new QMenu(this);for(auto action:menuBar()->actions())if(action->menu())menus->addMenu(action->menu());
-    auto menuButton=new QToolButton(compact);menuButton->setText(tr("Menus"));menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
+    auto menus=new QMenu(this);menus->setObjectName("mainControlsMenu");
+    auto menuButton=new QToolButton(compact);menuButton->setText(tr("Main Menu"));menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
     auto preferences=new QSettings(this);
     QList<QAction *> toggles;
     for(int i=0;i<sections.size();++i) {
         const auto rows=sections[i];const QString key=QString("organizedLayout/%1").arg(i);
         for(int j=0;j<rows.size();++j)rows[j]->setObjectName(j==0 ? QString("controlSection%1").arg(i) : QString("controlSection%1Row%2").arg(i).arg(j));
         auto toggle=new QAction(names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggles.append(toggle);
-        const bool expanded=preferences->value(key,false).toBool();toggle->setChecked(expanded);for(auto row:rows)row->setVisible(expanded);
+        const bool expanded=i!=2 && preferences->value(key,false).toBool();toggle->setChecked(expanded);for(auto row:rows)row->setVisible(expanded);
         connect(toggle,&QAction::toggled,this,[rows,preferences,key](bool shown){for(auto row:rows)row->setVisible(shown);preferences->setValue(key,shown);});
-        if(i<6)compact->addAction(toggle);
+        if(i<6)compact->addAction(i==2 ? windowDepth : toggle);
         for(auto row:rows)for(auto action:row->actions())if(!qobject_cast<QWidgetAction *>(action))addAction(action);
     }
     compact->addSeparator();compact->addAction(selectionsDock->toggleViewAction());
     selectionsDock->toggleViewAction()->setToolTip(tr("Show or hide History: individual selection and brush edits, not a whole-project undo timeline"));
     auto layoutMenu=new QMenu(tr("Layout"),compact);
-    auto expandAll=[toggles](bool shown){for(auto action:toggles)action->setChecked(shown);};
+    auto expandAll=[toggles](bool shown){for(int i=0;i<toggles.size();++i)if(i!=2)toggles[i]->setChecked(shown);};
     layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
     auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);compact->addAction(toggles[6]);
+    auto guided=compact->addAction(tr("Guided Process"));guided->setObjectName("guidedProcessAction");connect(guided,&QAction::triggered,this,&MainWindow::startGuidedProcess);
+    // Widget controls stay in their sections: each is directly reachable from Main Menu.
+    for(int i=0;i<sections.size();++i) {
+        if(i==2){menus->addAction(windowDepth);continue;}
+        auto group=menus->addMenu(names[i]);group->setObjectName(QString("mainSectionMenu%1").arg(i));
+        auto show=group->addAction(tr("Show %1 controls").arg(names[i]));connect(show,&QAction::triggered,this,[toggle=toggles[i]]{toggle->setChecked(true);});group->addSeparator();
+        for(auto row:sections[i])for(auto action:row->actions()) {
+            if(auto widgetAction=qobject_cast<QWidgetAction *>(action)) {
+                auto widget=widgetAction->defaultWidget();
+                if(auto combo=qobject_cast<QComboBox *>(widget)) {
+                    QString label=combo==brushMode ? tr("Selection Tool") : combo==brushBackground ? tr("Out-of-Frame Background") : tr("Add / Subtract");
+                    auto choices=group->addMenu(label);
+                    for(int n=0;n<combo->count();++n){auto choice=choices->addAction(combo->itemText(n));connect(choice,&QAction::triggered,this,[combo,n]{combo->setCurrentIndex(n);QMetaObject::invokeMethod(combo,"activated",Qt::DirectConnection,Q_ARG(int,n));});}
+                } else if(auto spin=qobject_cast<QSpinBox *>(widget)) {
+                    QString label=spin==frameDepth ? tr("Frame Point Depth") : spin==brushSize ? tr("Brush Size") : tr("Background Opacity");
+                    auto setValue=group->addAction(label+tr("…"));connect(setValue,&QAction::triggered,this,[this,spin,label]{bool ok=false;int value=QInputDialog::getInt(this,label,tr("Value"),spin->value(),spin->minimum(),spin->maximum(),spin->singleStep(),&ok);if(ok)spin->setValue(value);});
+                } else if(widget==autoMaskButton) {
+                    group->addMenu(autoMaskMenu);
+                }
+            } else group->addAction(action);
+        }
+    }
+    menus->addAction(selectionsDock->toggleViewAction());menus->addMenu(layoutMenu);menus->addAction(guided);menus->addSeparator();menus->addAction(m_checkUpdatesAction);menus->addAction(about);
     const QString historyKey="compactLayout/history";
     selectionsDock->setVisible(preferences->value(historyKey,false).toBool());
     connect(selectionsDock,&QDockWidget::visibilityChanged,this,[this,preferences,historyKey](bool shown){if(isVisible() && !isMinimized()) preferences->setValue(historyKey,shown);});
@@ -1085,7 +1123,7 @@ void MainWindow::createToolbar()
 class SettingsDialog : public QDialog {
 public:
     SettingsDialog(AppSettings &s, QWidget *parent = nullptr) : QDialog(parent), m_settings(s) {
-        setWindowTitle(tr("Mask Settings"));
+        setWindowTitle(tr("Background & Export Settings"));
         setObjectName("maskSettingsDialog");
         QFormLayout *layout = new QFormLayout(this);
 
@@ -1096,20 +1134,20 @@ public:
             QColor c = QColorDialog::getColor(m_settings.maskColor, this);
             if (c.isValid()) { m_settings.maskColor = c; updateColorBtn(m_maskColorBtn, c); }
         });
-        layout->addRow(tr("Mask Color:"), m_maskColorBtn);
+        layout->addRow(tr("Preview Background Color:"), m_maskColorBtn);
 
         m_opacitySpin = new QSpinBox;
         m_opacitySpin->setObjectName("settingsMaskOpacitySpin");
         m_opacitySpin->setRange(0, 100);
         m_opacitySpin->setValue(m_settings.opacity * 100);
         m_opacitySpin->setSuffix("%");
-        layout->addRow(tr("Mask Opacity:"), m_opacitySpin);
+        layout->addRow(tr("Preview Background Opacity:"), m_opacitySpin);
 
         m_featherSpin = new QSpinBox;
         m_featherSpin->setRange(0, 100);
         m_featherSpin->setValue(m_settings.featherAmount);
         m_featherSpin->setSuffix(" px");
-        layout->addRow(tr("Mask Feathering:"), m_featherSpin);
+        layout->addRow(tr("Frame Edge Feathering:"), m_featherSpin);
 
         m_padxSpin = new QSpinBox;
         m_padxSpin->setRange(0, 2000);
@@ -1191,7 +1229,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r15";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r16";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1218,7 +1256,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R15 (2.1.5)</h2>"
+        tr("<h2>StereoMask Mac R16 (2.1.6)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1259,7 +1297,7 @@ void MainWindow::newProject()
         if (m_viewWidget->loadImage(fileName)) {
             QFileInfo info(fileName);
             QString mskPath = info.absolutePath() + "/" + info.completeBaseName() + ".msk";
-            m_settings.addRecentFile(mskPath);
+            m_settings.addRecentFile(QFile::exists(mskPath) ? mskPath : fileName);
             updateRecentFileActions();
             statusBar()->showMessage(tr("New project started: %1").arg(info.fileName()), 5000);
         } else {
@@ -1271,7 +1309,7 @@ void MainWindow::newProject()
 void MainWindow::openProject()
 {
     QString start = m_settings.lastFolder.isEmpty() ? "" : m_settings.lastFolder;
-    QString fileName = QFileDialog::getOpenFileName(this, tr("Open Mask Project"), start, tr("Mask Project (*.msk)"));
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Open Project"), start, tr("Mask Project (*.msk)"));
     if (!fileName.isEmpty()) {
         m_settings.lastFolder = QFileInfo(fileName).absolutePath();
         m_settings.save();
@@ -1316,7 +1354,7 @@ void MainWindow::exportImage()
 
     QFileInfo info(m_viewWidget->imagePath());
     QString defaultName = info.absolutePath() + "/" + info.completeBaseName() + "_masked.png";
-    QString fileName = QFileDialog::getSaveFileName(this, tr("Export Masked Image"), defaultName, tr("Images (*.png *.jpg)"));
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Export Image"), defaultName, tr("Images (*.png *.jpg)"));
     if (!fileName.isEmpty()) {
         QImage left = m_viewWidget->exportEye(false);
         QImage right = m_viewWidget->exportEye(true);

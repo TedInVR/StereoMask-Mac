@@ -1,4 +1,4 @@
-StereoMask Mac R15 / 2.1.5
+StereoMask Mac R16 / 2.1.6
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -11,12 +11,12 @@ New: Selections panel, individual polygon editing/reordering/visibility,
 whole-polygon movement, optional paired and Smart lassos, matching export
 previews, frame holes and updated Mac help.
 
-Turn Preview Mask OFF to see the whole source while tracing.
+Turn Preview Result OFF to see the whole source while tracing.
 Choose Transparent (PNG) for a transparent export; new images default
 to Match preview, which uses mask color and opacity.
 
 Help > User Guide explains the tools and Mac shortcuts.
-Help > Check for Updates checks the Mac repository; it does not install.
+Main Menu > Check for Updates checks the Mac repository; it does not install.
 
 Source release for Apple Silicon. This revision still needs actual Mac
 packaging, Finder launch and input verification before a binary release.
@@ -24,3 +24,5 @@ packaging, Finder launch and input verification before a binary release.
 First optional step: Stereo Window opens an anaglyph slider. Apply commits
 one undoable source-depth adjustment; Cancel leaves it unchanged. Save
 the project to keep it. Help explains the new tool and side strips.
+
+R16: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.

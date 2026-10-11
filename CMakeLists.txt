@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(StereoMask VERSION 2.1.5 LANGUAGES CXX)
+project(StereoMask VERSION 2.1.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +36,8 @@ add_executable(StereoMask
     smartselection.cpp
     smartselection.h
     mainwindow.cpp
+    keyboardshortcuts.cpp
+    guidedprocess.cpp
     mainwindow.h
     stereoviewwidget.cpp
     stereoviewwidget.h
@@ -53,7 +55,7 @@ if(APPLE)
     enable_language(OBJCXX)
     target_sources(StereoMask PRIVATE appactivation.mm)
     target_link_libraries(StereoMask PRIVATE "-framework AppKit")
-    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.stereomask.brush" MACOSX_BUNDLE_BUNDLE_NAME "StereoMask Mac" MACOSX_BUNDLE_SHORT_VERSION_STRING "2.1.5")
+    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.stereomask.brush" MACOSX_BUNDLE_BUNDLE_NAME "StereoMask Mac" MACOSX_BUNDLE_SHORT_VERSION_STRING "2.1.6")
 endif()
 target_include_directories(StereoMask PRIVATE ${OpenCV_INCLUDE_DIRS})
 

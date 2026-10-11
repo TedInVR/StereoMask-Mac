@@ -22,6 +22,10 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QKeyEvent>
+#include <QTextBrowser>
+#include <QLineEdit>
+#include <QTableWidget>
+#include <QCheckBox>
 #include <QToolBar>
 #include <QDockWidget>
 #include <QSettings>
@@ -140,7 +144,7 @@ int main(int argc, char **argv) {
     auto editControls=window.findChild<QToolBar *>("controlSection2");
     const QStringList headings={"File","View","Stereo Window","Create Frame","Edit Frame","Out-of-Frame","Help"};
     for(int i=0;i<headings.size();++i)if(window.findChild<QAction *>(QString("sectionToggle%1").arg(i))->text()!=headings[i])return 47;
-    if(fileControls->actions().size()!=5)return 48;
+    if(fileControls->actions().size()!=6)return 48;
     auto outTools=window.findChild<QComboBox *>("outOfFrameToolCombo");if(!outTools || outTools->findData(0)>=0)return 49;
     if(!window.findChild<QSpinBox *>("framePointDepth"))return 50;
     auto closeAction=window.findChild<QAction *>("closeProjectAction");
@@ -179,7 +183,7 @@ int main(int argc, char **argv) {
     view->setMaskSettings(sharedColor,0.73f);
     if (opacitySpin->value()!=73 || maskColor->icon().pixmap(20,20).toImage().pixelColor(10,10)!=sharedColor) return 21;
     QAction *settingsAction=nullptr;
-    for (auto action:window.findChildren<QAction *>()) if (action->text()=="Settings") {settingsAction=action;break;}
+    for (auto action:window.findChildren<QAction *>()) if (action->text()=="Background & Export Settings") {settingsAction=action;break;}
     if (!settingsAction) return 22;
     bool settingsSynced=false;
     QTimer::singleShot(0,[&] {
@@ -247,6 +251,42 @@ int main(int argc, char **argv) {
     movePolygon->trigger();if (view->polygonMoveEnabled()) return 28;
     QApplication::processEvents();
     if (!window.grab().save("mac-r11-ui.png")) return 6;
+    auto mainMenu=window.findChild<QMenu *>("mainControlsMenu");if(!mainMenu)return 51;
+    QStringList menuNames;for(auto action:mainMenu->actions())menuNames<<action->text();
+    for(const QString &name:QStringList{"File","View","Stereo Window","Create Frame","Edit Frame","Out-of-Frame","History","Layout","Help","Guided Process","Check for Updates…","About"})if(!menuNames.contains(name))return 52;
+    auto compactBar=window.findChild<QToolBar *>("compactControls");
+    if(!compactBar->actions().contains(windowAction) || compactBar->actions().contains(window.findChild<QAction *>("sectionToggle2")))return 53;
+    bool readableList=false;
+    QTimer::singleShot(0,[&]{auto dialog=window.findChild<QDialog *>("keyboardShortcutsDialog");if(!dialog)return;auto browser=dialog->findChild<QTextBrowser *>();readableList=browser && browser->toPlainText().contains("Command") && browser->toPlainText().contains("Option") && browser->toPlainText().contains("Control");dialog->grab().save("keyboard-shortcuts.png");dialog->reject();});
+    QMetaObject::invokeMethod(&window,"showKeyboardShortcuts",Qt::DirectConnection);if(!readableList)return 54;
+    QAction *panShortcut=nullptr;for(auto action:window.findChildren<QAction *>())if(action->property("customShortcutLabel").toString()=="Pan")panShortcut=action;
+    if(!panShortcut)return 55;const auto oldPan=panShortcut->shortcut();
+    auto changePan=[&](bool save,bool reset){QTimer::singleShot(0,[&,save,reset]{auto dialog=window.findChild<QDialog *>("editShortcutsDialog");if(!dialog)return;auto table=dialog->findChild<QTableWidget *>();auto box=dialog->findChild<QDialogButtonBox *>();if(reset){for(auto button:box->buttons())if(button->text()=="Restore Defaults")button->click();}else for(int row=0;row<table->rowCount();++row)if(table->item(row,0)->text()=="Pan")qobject_cast<QLineEdit *>(table->cellWidget(row,1))->setText("Command+Shift+J");if(save)box->button(QDialogButtonBox::Save)->click();else dialog->reject();});QMetaObject::invokeMethod(&window,"editKeyboardShortcuts",Qt::DirectConnection);};
+    changePan(false,false);if(panShortcut->shortcut()!=oldPan)return 56;
+    changePan(true,false);if(panShortcut->shortcut()!=QKeySequence("Ctrl+Shift+J"))return 57;
+    {MainWindow reloaded;bool restored=false;for(auto action:reloaded.findChildren<QAction *>())if(action->property("customShortcutLabel").toString()=="Pan")restored=action->shortcut()==QKeySequence("Ctrl+Shift+J");if(!restored)return 58;}
+    changePan(true,true);if(panShortcut->shortcut()!=oldPan)return 59;
+    bool aliasPreserved=false;for(auto action:window.findChildren<QAction *>())if(action->text()=="Zoom +")aliasPreserved=action->shortcuts().contains(QKeySequence("Ctrl+="));if(!aliasPreserved)return 72;
+    bool conflictShown=false;
+    QTimer::singleShot(0,[&]{auto dialog=window.findChild<QDialog *>("editShortcutsDialog");auto table=dialog->findChild<QTableWidget *>();auto box=dialog->findChild<QDialogButtonBox *>();for(int row=0;row<table->rowCount();++row)if(table->item(row,0)->text()=="Pan")qobject_cast<QLineEdit *>(table->cellWidget(row,1))->setText("Left");QTimer::singleShot(0,[&]{if(auto warning=window.findChild<QMessageBox *>()){conflictShown=true;warning->accept();}dialog->reject();});box->button(QDialogButtonBox::Save)->click();});
+    QMetaObject::invokeMethod(&window,"editKeyboardShortcuts",Qt::DirectConnection);if(!conflictShown || panShortcut->shortcut()!=oldPan)return 73;
+    {
+        MainWindow guidedWindow;auto guidedView=qobject_cast<StereoViewWidget *>(guidedWindow.centralWidget());guidedView->setAutoSave(false);
+        QMetaObject::invokeMethod(&guidedWindow,"startGuidedProcess",Qt::DirectConnection);auto dock=guidedWindow.findChild<QDockWidget *>("guidedProcessDock");if(!dock)return 60;
+        auto next=dock->findChild<QPushButton *>("guidedNext");auto skip=dock->findChild<QPushButton *>("guidedSkip");auto back=dock->findChild<QPushButton *>("guidedBack");
+        next->click();next->click();if(dock->property("step").toInt()!=1 || dock->findChild<QLabel *>("guidedMessage")->text().isEmpty())return 61;
+        const QString fresh=selectionFixture.path()+"/guided.png";pair.save(fresh);if(!guidedView->loadImage(fresh))return 62;
+        next->click();skip->click();if(dock->property("step").toInt()!=3)return 63;
+        next->click();if(dock->property("step").toInt()!=3)return 64;
+        for(const QPointF &point:QVector<QPointF>{{30,20},{210,20},{210,160},{30,160}})guidedView->addPoint(point,0);
+        next->click();skip->click();guidedWindow.resize(1280,900);guidedWindow.show();QApplication::processEvents();guidedWindow.grab().save("guided-process.png");dock->findChild<QComboBox *>("guidedProtrude")->setCurrentIndex(1);next->click();if(dock->property("step").toInt()!=8)return 65;
+        back->click();if(dock->property("step").toInt()!=5)return 66;
+        dock->findChild<QComboBox *>("guidedProtrude")->setCurrentIndex(0);next->click();dock->findChild<QComboBox *>("guidedTool")->setCurrentIndex(1);next->click();if(guidedView->brushMode()!=7 || dock->property("step").toInt()!=7)return 67;
+        next->click();if(dock->property("step").toInt()!=7)return 68;dock->findChild<QCheckBox *>("guidedBothEyes")->setChecked(true);next->click();skip->click();next->click();if(dock->property("step").toInt()!=10)return 69;
+        dock->findChild<QPushButton *>("guidedAction")->click();if(!QFile::exists(selectionFixture.path()+"/guided.msk"))return 70;
+        next->click();if(guidedView->points().size()!=4 || !guidedView->isImageLoaded())return 71;
+    }
+    std::cout<<"Main Menu coverage, direct Stereo Window, readable/custom shortcuts with persistence and defaults, guided gates/branches/back/save: PASS\n";
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

@@ -44,6 +44,10 @@ public:
     ~MainWindow();
 
 private slots:
+    void showKeyboardShortcuts();
+    void editKeyboardShortcuts();
+    void setupKeyboardShortcuts();
+    void startGuidedProcess();
     void adjustPictureFrame();
     void adjustStereoWindow();
     void closeProject();

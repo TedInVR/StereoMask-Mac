@@ -1,6 +1,6 @@
 {
-  "version": "2.1.5",
+  "version": "2.1.6",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R15 reorganizes controls into File, View, Stereo Window, Create Frame, Edit Frame and Out-of-Frame; retains History/Layout and adds Help. Launches maximized with foreground activation, adds Close and frame-point depth, and renames Out-of-Frame Background. Source download; build on your Mac."
+  "notes": "Mac R16 adds Guided Process, complete Main Menu, direct Stereo Window access, Open Recent, clear frame/background controls, and readable/customizable keyboard shortcuts with saved preferences and conflict checks. Source download; build on your Mac."
 }
