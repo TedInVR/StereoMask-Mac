@@ -72,6 +72,13 @@ int main(int argc,char **argv) {
     require(StereoViewWidget::saveComposedPair(borderExport,border.exportEye(false),border.exportEye(true),3,4,5,Qt::transparent),"border composed export");
     QImage exportedBorder(borderExport);require(exportedBorder.pixelColor(75+3,90+4)==border.exportEye(false).pixelColor(75,90) && exportedBorder.pixelColor(0,0).alpha()==0,"border export pixels/padding");
     std::cout<<"Picture-frame styles, foreground overlap, eye isolation, persistence, Undo/Redo and PNG export: PASS\n";
+    StereoViewWidget frameInsert;frameInsert.setAutoSave(false);frameInsert.resize(800,400);const QString insertionFile=borderTemp.path()+"/insert.png";require(borderPair.save(insertionFile) && frameInsert.loadImage(insertionFile),"frame insertion fixture");frameInsert.fitView();
+    const QVector<QPointF> corners={{80,50},{160,50},{160,130},{80,130}};for(const auto &p:corners)frameInsert.addPoint(p,0);
+    QMouseEvent addFramePoint(QEvent::MouseButtonPress,QPointF(199,169),QPointF(199,169),Qt::RightButton,Qt::RightButton,Qt::NoModifier);
+    QApplication::sendEvent(&frameInsert,&addFramePoint);
+    require(frameInsert.points().size()==5 && frameInsert.points()[0].pos==corners[0] && frameInsert.points()[2].pos==corners[1] && frameInsert.points()[3].pos==corners[2] && frameInsert.points()[4].pos==corners[3],"nearest-edge insert changes existing frame points/order");
+    frameInsert.undoStack()->undo();require(frameInsert.points().size()==4,"frame insertion undo");frameInsert.undoStack()->redo();require(frameInsert.points().size()==5,"frame insertion redo");
+    std::cout<<"Nearest-edge frame insertion preserves vertices/order and Undo/Redo: PASS\n";
     QTemporaryDir windowTemp; const QString windowFile=windowTemp.path()+"/window.png";
     QImage windowSource(40,20,QImage::Format_RGB32);windowSource.fill(Qt::black);
     windowSource.setPixelColor(12,10,Qt::white);windowSource.setPixelColor(28,10,Qt::white);

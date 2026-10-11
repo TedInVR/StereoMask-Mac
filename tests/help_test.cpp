@@ -22,6 +22,9 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QKeyEvent>
+#include <QToolBar>
+#include <QDockWidget>
+#include <QSettings>
 #include <QCheckBox>
 #include <iostream>
 
@@ -108,9 +111,19 @@ int main(int argc, char **argv) {
     });
     QMetaObject::invokeMethod(&window, "showAbout", Qt::DirectConnection);
     if (!credited) { std::cerr << "Original creator attribution or clickable link missing\n"; return 7; }
+    auto compact=window.findChild<QToolBar *>("compactControls");
+    auto history=window.findChild<QDockWidget *>("selectionObjectsDock");
+    if (!compact || !history || history->windowTitle()!=QString("History")) return 40;
+    for(int i=0;i<7;++i) {auto toggle=window.findChild<QAction *>(QString("sectionToggle%1").arg(i));if(!toggle)return 41;toggle->setChecked(false);}
     window.resize(1280, 900);
     window.show();
     QApplication::processEvents();
+    if (!compact->isVisible()) return 42;
+    for(int i=0;i<7;++i) {auto section=window.findChild<QToolBar *>(QString("controlSection%1").arg(i));if(!section || section->isVisible())return 43;}
+    auto first=window.findChild<QAction *>("sectionToggle0");first->setChecked(true);
+    if (!window.findChild<QToolBar *>("controlSection0")->isVisible() || window.findChild<QToolBar *>("controlSection1")->isVisible())return 44;
+    first->setChecked(false);history->toggleViewAction()->trigger();if(!history->isVisible())return 45;history->toggleViewAction()->trigger();
+    window.grab().save("compact-controls.png");
     auto list=window.findChild<QTreeWidget *>("selectionObjectsList");
     auto view=qobject_cast<StereoViewWidget *>(window.centralWidget());
     if (!list || !view) return 8;

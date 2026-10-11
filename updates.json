@@ -1,6 +1,6 @@
 {
-  "version": "2.1.3",
+  "version": "2.1.4",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R13 adds Push back/Pull forward buttons, dialog-wide Left/Right one-pixel controls, larger pixel arrows, and customizable Flat, Beveled or Decorative Trim picture frames behind foreground selections. Source download; build on your Mac."
+  "notes": "Mac R14 adds a permanent compact control bar, independently collapsible sections, Show/Hide all, full-screen access to all menus, History toggle, and nearest-edge frame point insertion. Source download; build on your Mac."
 }

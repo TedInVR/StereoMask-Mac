@@ -1,3 +1,4 @@
+#include <limits>
 #include <QBuffer>
 #include "smartselection.h"
 #include <QFutureWatcher>
@@ -2348,7 +2349,8 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
             
             // Check if we clicked on an edge to insert
             int insertIdx = -1;
-            float minEdgeDist = 10.0f; // px threshold
+            float minEdgeDist = m_points.count()>=3 ? std::numeric_limits<float>::max() : 10.0f;
+            // Closed frames insert at the nearest edge, rather than appending a crossing segment.
             for (int i=0; i<m_points.count(); ++i) {
                 int nextIdx = (i + 1) % m_points.count();
                 const auto &p1 = m_points[i];
@@ -2363,7 +2365,7 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
                     for (float t = 0.1f; t < 1.0f; t += 0.1f) {
                         float it = 1.0f - t;
                         QPointF b = it*it*it*p1W + 3*it*it*t*cp1W + 3*it*t*t*cp2W + t*t*t*p2W;
-                        if (QLineF(event->pos(), b).length() < minEdgeDist) { insertIdx = nextIdx; break; }
+                        if (QLineF(event->pos(), b).length() < minEdgeDist) { minEdgeDist=QLineF(event->pos(),b).length();insertIdx = nextIdx; }
                     }
                 } else {
                     // Linear distance
@@ -2373,10 +2375,9 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
                     if (l2 != 0) {
                         float t = qBound(0.0f, (float)QPointF::dotProduct(p3 - p1W, p2W - p1W) / l2, 1.0f);
                         QPointF projection = p1W + t * (p2W - p1W);
-                        if (QLineF(p3, projection).length() < minEdgeDist) insertIdx = nextIdx;
+                        if (QLineF(p3, projection).length() < minEdgeDist) {minEdgeDist=QLineF(p3,projection).length();insertIdx = nextIdx;}
                     }
                 }
-                if (insertIdx != -1) break;
             }
 
             addPoint(imgPos, d, insertIdx);

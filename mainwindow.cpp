@@ -6,6 +6,7 @@
 #include "mainwindow.h"
 #include "stereoviewwidget.h"
 #include <QMenuBar>
+#include <QSettings>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QSpinBox>
@@ -159,7 +160,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R13 (2.1.3)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R14 (2.1.4)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -894,7 +895,7 @@ void MainWindow::createToolbar()
     connect(m_viewWidget,&StereoViewWidget::maskAppearanceChanged,this,syncAppearance);
     syncAppearance(m_viewWidget->maskColor(),m_viewWidget->maskOpacity());
 
-    QDockWidget *selectionsDock=new QDockWidget(tr("Selections"),this);
+    QDockWidget *selectionsDock=new QDockWidget(tr("History"),this);
     selectionsDock->setObjectName("selectionObjectsDock");
     selectionsDock->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
     QWidget *selectionPanel=new QWidget(selectionsDock);
@@ -1006,6 +1007,34 @@ void MainWindow::createToolbar()
     });
     QMenu *viewMenu=menuBar()->addMenu(tr("&View"));
     viewMenu->addAction(maskPreview); viewMenu->addAction(cleanPreview); viewMenu->addAction(selectionsDock->toggleViewAction());
+    // Always-present in-window controls, including every native menu command.
+    auto compact= new QToolBar(tr("Control sections"),this);
+    compact->setObjectName("compactControls");configureToolbar(compact);
+    insertToolBar(fileViewBar,compact);insertToolBarBreak(fileViewBar);
+    auto menus=new QMenu(this);
+    for (auto action:menuBar()->actions()) if (action->menu()) menus->addMenu(action->menu());
+    auto menuButton=new QToolButton(compact);menuButton->setText(tr("Menus"));menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
+    const QList<QToolBar *> sections={fileViewBar,editMaskBar,transformBar,maskBar,brushBar,selectionBar,navigationBar};
+    const QStringList names={tr("File / View / App"),tr("Edit / Align"),tr("Transform"),tr("Frame"),tr("Editing Tool"),tr("Selection"),tr("Navigate")};
+    auto preferences=new QSettings(this);
+    for (int i=0;i<sections.size();++i) {
+        auto section=sections[i];const QString key=QString("compactLayout/section%1").arg(i);
+        section->setObjectName(QString("controlSection%1").arg(i));
+        auto toggle=compact->addAction(names[i]);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);
+        const bool expanded=preferences->value(key,false).toBool();toggle->setChecked(expanded);section->setVisible(expanded);
+        connect(toggle,&QAction::toggled,this,[section,preferences,key](bool shown){section->setVisible(shown);preferences->setValue(key,shown);});
+
+    }
+    compact->addSeparator();compact->addAction(selectionsDock->toggleViewAction());
+    selectionsDock->toggleViewAction()->setToolTip(tr("Show or hide History: individual selection and brush edits, not a whole-project undo timeline"));
+    auto layoutMenu=new QMenu(tr("Layout"),compact);
+    auto expandAll=[this](bool shown){for(int i=0;i<7;++i) if(auto action=findChild<QAction *>(QString("sectionToggle%1").arg(i))) action->setChecked(shown);};
+    layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});
+    layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
+    auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);
+    const QString historyKey="compactLayout/history";
+    selectionsDock->setVisible(preferences->value(historyKey,false).toBool());
+    connect(selectionsDock,&QDockWidget::visibilityChanged,this,[this,preferences,historyKey](bool shown){if(isVisible() && !isMinimized()) preferences->setValue(historyKey,shown);});
     refreshObjects();
 
 }
@@ -1121,7 +1150,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r13";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r14";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1148,7 +1177,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R13 (2.1.3)</h2>"
+        tr("<h2>StereoMask Mac R14 (2.1.4)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
