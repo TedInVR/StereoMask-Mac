@@ -1,6 +1,6 @@
 {
-  "version": "2.1.4",
+  "version": "2.1.5",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R14 adds a permanent compact control bar, independently collapsible sections, Show/Hide all, full-screen access to all menus, History toggle, and nearest-edge frame point insertion. Source download; build on your Mac."
+  "notes": "Mac R15 reorganizes controls into File, View, Stereo Window, Create Frame, Edit Frame and Out-of-Frame; retains History/Layout and adds Help. Launches maximized with foreground activation, adds Close and frame-point depth, and renames Out-of-Frame Background. Source download; build on your Mac."
 }

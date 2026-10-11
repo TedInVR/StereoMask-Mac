@@ -1,4 +1,8 @@
 #include <QApplication>
+#include <QTimer>
+#ifdef Q_OS_MACOS
+void activateMacApplication();
+#endif
 #include <QLocale>
 #include <QImageReader>
 #include <QDebug>
@@ -18,7 +22,13 @@ int main(int argc, char *argv[])
     qDebug() << "------------------------------";
 
     MainWindow w;
-    w.setWindowTitle("StereoMask Mac R14 (2.1.4)");
-    w.show();
+    w.setWindowTitle("StereoMask Mac R15 (2.1.5)");
+    w.showMaximized();
+    QTimer::singleShot(0,&w,[&w] {
+#ifdef Q_OS_MACOS
+        activateMacApplication();
+#endif
+        w.raise();w.activateWindow();QApplication::setActiveWindow(&w);
+    });
     return a.exec();
 }

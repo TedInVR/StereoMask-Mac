@@ -6,12 +6,15 @@ StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theod
 - **Theodore Whitten:** Mac port, editing workflow and foreground-selection improvements, developed with Codex assistance.
 - **Upstream:** [SRathinaGiri/StereoMask](https://github.com/SRathinaGiri/StereoMask).
 
-The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.1.1 incorporates the earlier Mac foreground tools; Mac R14 brings its subsequent enhancements back to the Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.1.1 incorporates the earlier Mac foreground tools; Mac R15 brings its subsequent enhancements back to the Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
 
 ## Features
 
 - First-step Stereo Window: isolated anaglyph slider, precise pixels, Apply/Cancel/Reset, Undo/Redo and saved offset; original photo stays untouched.
 
+- Launch requests foreground activation and opens maximized with the Mac menu bar available.
+- Close Project in File and its toolbar section (Command+W); Stereo Window has its own section.
+- Logical groups: File, View, Stereo Window, Create Frame, Edit Frame, Out-of-Frame, History, Layout and Help.
 - Compact in-window controls: independent collapsible sections, Show/Hide all, complete menu access in full screen, and a persistent History toggle.
 - Frame point insertion at the nearest edge preserves existing vertices.
 - Picture Frame: customizable color and width, Flat/Beveled/Decorative Trim styles; preserved foreground covers the border.
@@ -33,7 +36,7 @@ The original MIT copyright and license are preserved in [LICENSE](LICENSE). Wind
 
 ## Build on Apple Silicon
 
-R14 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
+R15 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
 
 Install Xcode Command Line Tools and Homebrew, then the build dependencies:
 
@@ -52,9 +55,9 @@ For later updates, run `bash "/Applications/StereoMask Development/UPDATE_STEREO
 From a Git checkout, run `bash BUILD_BRUSH_VERSION.command` in its source directory.
 The script configures CMake, builds, deploys Qt, repairs dependency references, verifies the bundle and ad-hoc signs it. It stops on deployment or startup errors. It stages and verifies the new bundle, replaces `/Applications/StereoMask.app` and launches that permanent copy. A failed install verification restores the previous installed bundle. Keep the same Dock icon. If Applications is not writable, the installer stops and you can use Finder to copy the built app and choose Replace. CMake’s cache is regenerated so a moved development folder does not retain its old location.
 
-### R14 status
+### R15 status
 
-R14 imports the upstream v2.1.1 core and UI, with Mac shortcuts, guide, updater endpoint and build packaging preserved. Cross-platform regression results are recorded in DEVELOPMENT_LOG.md. Actual Apple Silicon packaging, Finder launch, physical Command-click/Return delivery and relocation still need Mac confirmation for this revision. Paired alignment is an estimate; check the opposite-eye outline and adjust manually. Smart lasso remains optional.
+R15 imports the upstream v2.1.1 core and UI, with Mac shortcuts, guide, updater endpoint and build packaging preserved. Cross-platform regression results are recorded in DEVELOPMENT_LOG.md. Actual Apple Silicon packaging, Finder launch, physical Command-click/Return delivery and relocation still need Mac confirmation for this revision. Paired alignment is an estimate; check the opposite-eye outline and adjust manually. Smart lasso remains optional.
 
 The dependency repair redirects non-system loads into the bundle, checks for duplicate OpenMP and re-signs. It does not bypass duplicate-runtime checks.
 Ad-hoc signing is local signing; this is not an Apple Developer ID signed or notarized public binary. Do not label a binary release ready until both Finder launch and relocation to Applications have been verified. Third-party binary notices/licenses must accompany any binary release; this source repository preserves the original app license.
@@ -63,7 +66,7 @@ Build logs: `build-mac-brush/deployment.log`, `bundle-repair.log`, `startup.log`
 
 ## Other platforms and testing
 
-The cross-platform Qt/C++ source remains compatible with the upstream Windows direction. CMake chooses OpenCV `stereo` for version 5 and `calib3d` for version 4. Windows packaging retains the existing upstream vcpkg configuration; the R14 packaging helper runs only on macOS.
+The cross-platform Qt/C++ source remains compatible with the upstream Windows direction. CMake chooses OpenCV `stereo` for version 5 and `calib3d` for version 4. Windows packaging retains the existing upstream vcpkg configuration; the R15 packaging helper runs only on macOS.
 
 ```bash
 cmake -S . -B build -DSTEREOMASK_BUILD_TESTS=ON
@@ -76,7 +79,7 @@ Qt 6 Widgets/Gui/Core/Concurrent/Network and OpenCV core/imgproc/stereo (or cali
 
 ## Development history
 
-[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) is the cumulative technical handoff. [HISTORICAL_RELEASE_NOTES.md](HISTORICAL_RELEASE_NOTES.md) retains previous revision instructions; use the R14 instructions above for this build. `upstream-brush.patch` is a historical early brush patch, not the complete R14 changeset. Current source is authoritative.
+[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) is the cumulative technical handoff. [HISTORICAL_RELEASE_NOTES.md](HISTORICAL_RELEASE_NOTES.md) retains previous revision instructions; use the R15 instructions above for this build. `upstream-brush.patch` is a historical early brush patch, not the complete R15 changeset. Current source is authoritative.
 
 ## Publishing future updates
 

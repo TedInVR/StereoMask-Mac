@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     const QByteArray html = file.readAll();
     if (!html.contains("First optional step") || !html.contains("Reset to original")) return 34;
     if (html != bundled.readAll() || !html.contains("Subbiah Rathinagiri") || !html.contains("Select Brush") || !html.contains("Tutorial 2")) return 3;
-    for (const QByteArray &feature: {QByteArray("Smart polygon lasso"),QByteArray("Paired polygon selections"),QByteArray("Selections"),QByteArray("Command + Enter"),QByteArray("Command-click lasso anchor"),QByteArray("Shift-click lasso edge"),QByteArray("F8"),QByteArray("Match preview"),QByteArray("Padding/gap color"),QByteArray("QTAGENT Rect Decompose"),QByteArray("Bernd Paksa")})
+    for (const QByteArray &feature: {QByteArray("Smart polygon lasso"),QByteArray("Paired polygon selections"),QByteArray("History"),QByteArray("Command + Enter"),QByteArray("Command-click lasso anchor"),QByteArray("Shift-click lasso edge"),QByteArray("F8"),QByteArray("Match preview"),QByteArray("Padding/gap color"),QByteArray("QTAGENT Rect Decompose"),QByteArray("Bernd Paksa")})
         if (!html.contains(feature)) {std::cerr<<"Guide lacks current feature: "<<feature.constData()<<'\n';return 3;}
     bool names = false;
     for (QComboBox *combo : window.findChildren<QComboBox *>())
@@ -136,6 +136,15 @@ int main(int argc, char **argv) {
 
     auto windowAction=window.findChild<QAction *>("stereoWindowAction");
     if (!windowAction || !windowAction->isEnabled()) return 30;
+    auto fileControls=window.findChild<QToolBar *>("controlSection0");
+    auto editControls=window.findChild<QToolBar *>("controlSection2");
+    const QStringList headings={"File","View","Stereo Window","Create Frame","Edit Frame","Out-of-Frame","Help"};
+    for(int i=0;i<headings.size();++i)if(window.findChild<QAction *>(QString("sectionToggle%1").arg(i))->text()!=headings[i])return 47;
+    if(fileControls->actions().size()!=5)return 48;
+    auto outTools=window.findChild<QComboBox *>("outOfFrameToolCombo");if(!outTools || outTools->findData(0)>=0)return 49;
+    if(!window.findChild<QSpinBox *>("framePointDepth"))return 50;
+    auto closeAction=window.findChild<QAction *>("closeProjectAction");
+    if (!fileControls || !editControls || !closeAction || fileControls->actions().contains(windowAction) || !editControls->actions().contains(windowAction) || !fileControls->actions().contains(closeAction)) return 46;
     bool windowPreview=false;
     QTimer::singleShot(0,[&]{
         auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
@@ -227,7 +236,7 @@ int main(int argc, char **argv) {
     invertObject->trigger();
     if (view->selectionObjects()[0].subtract || list->currentItem()->text(3)!="Add") return 16;
     bool edited=false;
-    for (QAction *action:window.findChildren<QAction *>()) if (action->text()=="Edit points") {
+    for (QAction *action:window.findChildren<QAction *>()) if (action->objectName()=="editHistoryPolygonAction") {
         action->trigger(); edited=view->hasLasso(); break;
     }
     if (!edited) return 13;

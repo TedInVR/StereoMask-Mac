@@ -46,6 +46,7 @@ public:
 private slots:
     void adjustPictureFrame();
     void adjustStereoWindow();
+    void closeProject();
     void newProject();
     void openProject();
     void saveProject();

@@ -7,6 +7,7 @@
 #include "stereoviewwidget.h"
 #include <QMenuBar>
 #include <QSettings>
+#include <QWidgetAction>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QSpinBox>
@@ -160,7 +161,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R14 (2.1.4)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R15 (2.1.5)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -267,10 +268,12 @@ void MainWindow::createMenus()
     }
     updateRecentFileActions();
 
+    auto closeProjectAction=fileMenu->addAction(tr("Close Project"),QKeySequence(Qt::CTRL | Qt::Key_W),this,&MainWindow::closeProject);
+    closeProjectAction->setObjectName("closeProjectAction");
     fileMenu->addAction(tr("&Save Mask Project"), QKeySequence::Save, this, &MainWindow::saveProject);
     fileMenu->addAction(tr("&Export Image..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this, &MainWindow::exportImage);
-    fileMenu->addSeparator();
-    fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
+    auto quitAction=new QAction(tr("Quit StereoMask"),this);quitAction->setShortcut(QKeySequence::Quit);addAction(quitAction);connect(quitAction,&QAction::triggered,this,&QWidget::close);
+    fileMenu->removeAction(m_recentFilesMenu->menuAction());
 
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     QAction *undoAction = m_viewWidget->undoStack()->createUndoAction(this, tr("&Undo"));
@@ -513,9 +516,11 @@ void MainWindow::createToolbar()
 
     QAction *openAction = addToolAction(fileViewBar, customIcon("open"), tr("Open"), tr("Open Mask Project (.msk)"));
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
+    fileViewBar->addAction(findChild<QAction *>("closeProjectAction"));
 
     QAction *windowDepth=addToolAction(fileViewBar,customIcon("anaglyph"),tr("Stereo Window"),tr("First step: adjust the starting image’s stereo-window depth"));
     windowDepth->setObjectName("stereoWindowAction");
+    fileViewBar->removeAction(windowDepth);
     windowDepth->setEnabled(m_viewWidget->isImageLoaded());
     connect(m_viewWidget,&StereoViewWidget::maskEmptyChanged,windowDepth,[this,windowDepth](bool){windowDepth->setEnabled(m_viewWidget->isImageLoaded());});
     connect(windowDepth,&QAction::triggered,this,&MainWindow::adjustStereoWindow);
@@ -576,6 +581,7 @@ void MainWindow::createToolbar()
     configureToolbar(editMaskBar);
 
     addToolGroupLabel(editMaskBar, tr("Edit"));
+    editMaskBar->addAction(windowDepth);
     QAction *undo = m_viewWidget->undoStack()->createUndoAction(this, tr("Undo"));
     undo->setIcon(customIcon("undo"));
     undo->setToolTip(tr("Undo"));
@@ -725,7 +731,7 @@ void MainWindow::createToolbar()
     connect(autoMaskButton, &QToolButton::clicked, this, runAutoMask);
     connect(autoMaskMenu, &QMenu::triggered, this, runAutoMask);
     autoMaskButton->setMenu(autoMaskMenu);
-    maskBar->addWidget(autoMaskButton);
+    QAction *autoMaskWidgetAction=maskBar->addWidget(autoMaskButton);
 
     connect(m_viewWidget, &StereoViewWidget::maskEmptyChanged, autoMaskButton, [this, autoMaskButton](bool isEmpty){
         autoMaskButton->setEnabled(m_viewWidget->isImageLoaded() && isEmpty);
@@ -735,7 +741,7 @@ void MainWindow::createToolbar()
     QToolBar *brushBar = addToolBar(tr("Reveal outside frame"));
     brushBar->addWidget(new QLabel(tr("Editing Tool: ")));
     QComboBox *brushMode = new QComboBox;
-    brushMode->addItem(tr("Edit frame"),0);
+    brushMode->setObjectName("outOfFrameToolCombo");brushMode->setPlaceholderText(tr("Choose a tool"));
     brushMode->addItem(tr("Select Brush"),1);
     brushMode->addItem(tr("Erase Brush"),2);
     brushMode->addItem(tr("Polygonal lasso"),7);
@@ -744,7 +750,7 @@ void MainWindow::createToolbar()
     brushBar->addWidget(new QLabel(tr(" Size: ")));
     QSpinBox *brushSize = new QSpinBox; brushSize->setRange(1, 1000); brushSize->setValue(40);
     brushBar->addWidget(brushSize);
-    brushBar->addWidget(new QLabel(tr(" Export background: ")));
+    brushBar->addWidget(new QLabel(tr(" Out-of-Frame Background: ")));
     QComboBox *brushBackground = new QComboBox;
     brushBackground->addItems({tr("Transparent (PNG)"), tr("Black"), tr("White")});
     brushBar->addWidget(brushBackground);
@@ -816,7 +822,7 @@ void MainWindow::createToolbar()
         m_viewWidget->setFocus();
     });
     connect(m_viewWidget, &StereoViewWidget::brushSettingsLoaded, this, [brushMode, brushBackground](int mode, int background) {
-        brushMode->setCurrentIndex(qMax(0,brushMode->findData(mode))); brushBackground->setCurrentIndex(background);
+        brushMode->setCurrentIndex(brushMode->findData(mode)); brushBackground->setCurrentIndex(background);
     });
     connect(brushMode, QOverload<int>::of(&QComboBox::activated), this, [this, anaglyph, pan, brushMode](int index) {
         const int mode=brushMode->itemData(index).toInt();
@@ -887,7 +893,7 @@ void MainWindow::createToolbar()
     connect(m_opacitySpin, &QSpinBox::valueChanged, this, [this](int v){
         m_viewWidget->setMaskOpacity(v / 100.0f);
     });
-    maskBar->addWidget(m_opacitySpin);
+    QAction *opacityWidgetAction=maskBar->addWidget(m_opacitySpin);
     auto syncAppearance=[this,color](const QColor &value,float opacity) {
         QPixmap swatch(20,20);swatch.fill(value);color->setIcon(QIcon(swatch));
         QSignalBlocker blocker(m_opacitySpin);m_opacitySpin->setValue(qRound(opacity*100));
@@ -903,6 +909,7 @@ void MainWindow::createToolbar()
     QToolBar *objectTools=new QToolBar(selectionPanel);
     objectTools->setIconSize(QSize(18,18));
     QAction *editObject=objectTools->addAction(customIcon("curve"),tr("Edit points"));
+    editObject->setObjectName("editHistoryPolygonAction");
     editObject->setToolTip(tr("Edit the selected polygon's control points"));
     QAction *renameObject=objectTools->addAction(style()->standardIcon(QStyle::SP_FileDialogDetailedView),tr("Rename"));
     renameObject->setToolTip(tr("Rename the selected object"));
@@ -1007,31 +1014,65 @@ void MainWindow::createToolbar()
     });
     QMenu *viewMenu=menuBar()->addMenu(tr("&View"));
     viewMenu->addAction(maskPreview); viewMenu->addAction(cleanPreview); viewMenu->addAction(selectionsDock->toggleViewAction());
-    // Always-present in-window controls, including every native menu command.
-    auto compact= new QToolBar(tr("Control sections"),this);
-    compact->setObjectName("compactControls");configureToolbar(compact);
+    // Regroup existing actions without duplicating their handlers or tool state.
+    const auto brushActions=brushBar->actions();
+    const auto selectionActions=selectionBar->actions();
+    QList<QAction *> transformActions;for(auto action:transformBar->actions()) if(!qobject_cast<QWidgetAction *>(action) && !action->isSeparator())transformActions.append(action);
+    for(auto bar:{fileViewBar,editMaskBar,transformBar,maskBar,brushBar,selectionBar,navigationBar})bar->clear();
+    auto populate=[](QToolBar *bar,const QList<QAction *> &actions){for(auto action:actions)bar->addAction(action);};
+    fileViewBar->setWindowTitle(tr("File"));
+    populate(fileViewBar,{newAction,openAction,findChild<QAction *>("closeProjectAction"),saveAction,exportAction});
+    findChild<QAction *>("closeProjectAction")->setText(tr("Close"));
+    navigationBar->setWindowTitle(tr("View"));
+    populate(navigationBar,{fit,zoomIn,zoomOut,pan,swap,anaglyph,maskPreview,cleanPreview,previewFeather});
+    editMaskBar->setWindowTitle(tr("Edit Frame"));
+    auto editFrame=editMaskBar->addAction(tr("Edit points"));editFrame->setObjectName("editFramePointsAction");
+    auto enterFrame=[this,brushMode,pan,anaglyph,freehand] {
+        pan->setChecked(false);anaglyph->setChecked(false);freehand->setChecked(false);
+        if(auto clean=findChild<QAction *>("cleanPreviewAction"))clean->setChecked(false);
+        m_viewWidget->setBrushMode(0);brushMode->setCurrentIndex(-1);m_viewWidget->setFocus();
+        statusBar()->showMessage(tr("Right-click an edge to add a point; left-drag dots to move them. Select dots and Delete to remove them."),8000);
+    };
+    connect(editFrame,&QAction::triggered,this,enterFrame);
+    populate(editMaskBar,{undo,redo,deleteSelected,clear,alignLeft,alignRight,alignTop,alignBottom,alignDepth,pictureFrame,lockH,lockV,snap});
+    transformBar->setWindowTitle(tr("Edit Frame transforms"));populate(transformBar,transformActions);
+    auto depthLabel=new QLabel(tr("Frame point depth: "));editMaskBar->addWidget(depthLabel);
+    auto frameDepth=new QSpinBox;frameDepth->setObjectName("framePointDepth");frameDepth->setRange(-10000,10000);frameDepth->setSuffix(tr(" px"));editMaskBar->addWidget(frameDepth);
+    connect(frameDepth,QOverload<int>::of(&QSpinBox::valueChanged),this,&MainWindow::updatePointDisparity);
+    connect(m_viewWidget,&StereoViewWidget::selectionChanged,frameDepth,[frameDepth](int value){QSignalBlocker blocker(frameDepth);frameDepth->setValue(value);});
+    maskBar->setWindowTitle(tr("Out-of-Frame appearance"));populate(maskBar,{color,pickColor,opacityWidgetAction,settings,clearPaint});
+    brushBar->setWindowTitle(tr("Out-of-Frame tools"));populate(brushBar,brushActions);brushMode->setCurrentIndex(-1);
+    selectionBar->setWindowTitle(tr("Out-of-Frame selection"));populate(selectionBar,selectionActions);
+    addToolBarBreak();auto stereoBar=addToolBar(tr("Stereo Window"));configureToolbar(stereoBar);stereoBar->addAction(windowDepth);
+    addToolBarBreak();auto createBar=addToolBar(tr("Create Frame"));configureToolbar(createBar);
+    auto createPoints=createBar->addAction(tr("Create with points"));createPoints->setObjectName("createFramePointsAction");connect(createPoints,&QAction::triggered,this,enterFrame);
+    createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
+    addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);populate(helpBar,{help,m_checkUpdatesAction,about});
+    const QList<QList<QToolBar *>> sections={{fileViewBar},{navigationBar},{stereoBar},{createBar},{editMaskBar,transformBar},{brushBar,selectionBar,maskBar},{helpBar}};
+    const QStringList names={tr("File"),tr("View"),tr("Stereo Window"),tr("Create Frame"),tr("Edit Frame"),tr("Out-of-Frame"),tr("Help")};
+    for(const auto &rows:sections)for(auto row:rows){removeToolBarBreak(row);removeToolBar(row);}
+    bool firstRow=true;for(const auto &rows:sections)for(auto row:rows){if(!firstRow)addToolBarBreak();addToolBar(row);firstRow=false;}
+    auto compact=new QToolBar(tr("Control sections"),this);compact->setObjectName("compactControls");configureToolbar(compact);
     insertToolBar(fileViewBar,compact);insertToolBarBreak(fileViewBar);
-    auto menus=new QMenu(this);
-    for (auto action:menuBar()->actions()) if (action->menu()) menus->addMenu(action->menu());
+    auto menus=new QMenu(this);for(auto action:menuBar()->actions())if(action->menu())menus->addMenu(action->menu());
     auto menuButton=new QToolButton(compact);menuButton->setText(tr("Menus"));menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
-    const QList<QToolBar *> sections={fileViewBar,editMaskBar,transformBar,maskBar,brushBar,selectionBar,navigationBar};
-    const QStringList names={tr("File / View / App"),tr("Edit / Align"),tr("Transform"),tr("Frame"),tr("Editing Tool"),tr("Selection"),tr("Navigate")};
     auto preferences=new QSettings(this);
-    for (int i=0;i<sections.size();++i) {
-        auto section=sections[i];const QString key=QString("compactLayout/section%1").arg(i);
-        section->setObjectName(QString("controlSection%1").arg(i));
-        auto toggle=compact->addAction(names[i]);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);
-        const bool expanded=preferences->value(key,false).toBool();toggle->setChecked(expanded);section->setVisible(expanded);
-        connect(toggle,&QAction::toggled,this,[section,preferences,key](bool shown){section->setVisible(shown);preferences->setValue(key,shown);});
-
+    QList<QAction *> toggles;
+    for(int i=0;i<sections.size();++i) {
+        const auto rows=sections[i];const QString key=QString("organizedLayout/%1").arg(i);
+        for(int j=0;j<rows.size();++j)rows[j]->setObjectName(j==0 ? QString("controlSection%1").arg(i) : QString("controlSection%1Row%2").arg(i).arg(j));
+        auto toggle=new QAction(names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggles.append(toggle);
+        const bool expanded=preferences->value(key,false).toBool();toggle->setChecked(expanded);for(auto row:rows)row->setVisible(expanded);
+        connect(toggle,&QAction::toggled,this,[rows,preferences,key](bool shown){for(auto row:rows)row->setVisible(shown);preferences->setValue(key,shown);});
+        if(i<6)compact->addAction(toggle);
+        for(auto row:rows)for(auto action:row->actions())if(!qobject_cast<QWidgetAction *>(action))addAction(action);
     }
     compact->addSeparator();compact->addAction(selectionsDock->toggleViewAction());
     selectionsDock->toggleViewAction()->setToolTip(tr("Show or hide History: individual selection and brush edits, not a whole-project undo timeline"));
     auto layoutMenu=new QMenu(tr("Layout"),compact);
-    auto expandAll=[this](bool shown){for(int i=0;i<7;++i) if(auto action=findChild<QAction *>(QString("sectionToggle%1").arg(i))) action->setChecked(shown);};
-    layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});
-    layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
-    auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);
+    auto expandAll=[toggles](bool shown){for(auto action:toggles)action->setChecked(shown);};
+    layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
+    auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);compact->addAction(toggles[6]);
     const QString historyKey="compactLayout/history";
     selectionsDock->setVisible(preferences->value(historyKey,false).toBool());
     connect(selectionsDock,&QDockWidget::visibilityChanged,this,[this,preferences,historyKey](bool shown){if(isVisible() && !isMinimized()) preferences->setValue(historyKey,shown);});
@@ -1150,7 +1191,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r14";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r15";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1177,7 +1218,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R14 (2.1.4)</h2>"
+        tr("<h2>StereoMask Mac R15 (2.1.5)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1193,6 +1234,19 @@ void MainWindow::showAbout()
     aboutBox.setTextInteractionFlags(Qt::TextBrowserInteraction);
     for (QLabel *label : aboutBox.findChildren<QLabel *>()) label->setOpenExternalLinks(true);
     aboutBox.exec();
+}
+
+void MainWindow::closeProject()
+{
+    if (!m_viewWidget->isImageLoaded()) return;
+    if (m_viewWidget->hasLasso()) {QMessageBox::information(this,tr("Unfinished outline"),tr("Apply or cancel the unfinished outline before closing the project."));return;}
+    if (!m_settings.autoSave) {
+        const auto choice=QMessageBox::question(this,tr("Close Project"),tr("Save your project before closing?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);
+        if (choice==QMessageBox::Cancel) return;
+        if(choice==QMessageBox::Save && !m_viewWidget->saveProject()){QMessageBox::critical(this,tr("Save failed"),tr("The project could not be saved. It remains open."));return;}
+    } else if(m_settings.autoSave && !m_viewWidget->saveProject()) {QMessageBox::critical(this,tr("Save failed"),tr("The project could not be saved. It remains open."));return;}
+    if (!m_viewWidget->closeProject()) {QMessageBox::information(this,tr("Please wait"),tr("Wait for the active operation to finish before closing."));return;}
+    statusBar()->showMessage(tr("Project closed"),5000);
 }
 
 void MainWindow::newProject()

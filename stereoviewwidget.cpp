@@ -1019,6 +1019,23 @@ void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
     emit brushSettingsLoaded(m_brushMode, m_cutoutBackground);
 }
 
+bool StereoViewWidget::closeProject() {
+    if(m_refining || m_brushing || m_draggingPolygon) return false;
+    if(m_autoMaskDebugTimer)m_autoMaskDebugTimer->stop();
+    cancelLasso();setPolygonMoveEnabled(false);setFreehandMode(false);
+    m_imagePath.clear();m_processor=StereoImageProcessor();
+    m_points.clear();m_selectedIndices.clear();m_selectedPointIndex=-1;m_preMovePoints.clear();m_hitType=HitNone;
+    m_selectionObjects.clear();m_activeSelectionId.clear();
+    m_baseRevealLeft=QImage();m_baseRevealRight=QImage();m_revealLeft=QImage();m_revealRight=QImage();m_beforeStroke=QImage();
+    m_completedLeft=QPainterPath();m_completedRight=QPainterPath();m_baseOutlineLeft=QPainterPath();m_baseOutlineRight=QPainterPath();
+    m_smartHintsLeft=QImage();m_smartHintsRight=QImage();m_smartRegionLeft=QRect();m_smartRegionRight=QRect();++m_smartRevision;
+    m_pictureFrame=PictureFrameSettings{};m_exportKeyLeft.clear();m_exportKeyRight.clear();m_exportCacheLeft=QImage();m_exportCacheRight=QImage();
+    m_zoom=1;m_panOffset=QPointF();m_isSelecting=false;m_isPanning=false;m_spacePan=false;m_isFreehandDrawing=false;m_freehandPoints.clear();
+    m_autoMaskDebugFrames.clear();m_pendingAutoMaskPoints.clear();m_pendingAutoMaskText.clear();
+    m_brushMode=0;m_pickingColor=false;m_cursorVisible=false;m_hasBrushPoint=false;m_cutout=false;m_cutoutBackground=4;
+    m_undoStack->clear();setCursor(Qt::ArrowCursor);emit selectionObjectsChanged();emit brushSettingsLoaded(0,4);notifySelectionState();notifyMaskState();update();return true;
+}
+
 bool StereoViewWidget::loadImage(const QString &fileName)
 {
     m_lastError = QString();

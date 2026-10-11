@@ -107,6 +107,7 @@ public:
     static QImage maskedPreviewEye(const QImage &image, const QImage &opening, const QColor &color, float opacity);
     static bool saveMaskedPreview(const QString &file, const QImage &left, const QImage &right, const QImage &openingLeft, const QImage &openingRight, const QColor &color, float opacity, int padx, int pady, int gap, const QColor &paddingColor);
     static bool saveCutout(const QString &file, const QImage &left, const QImage &right, const QVector<MaskPoint> &points, const QImage &revealLeft, const QImage &revealRight, int background, int padx, int pady, int gap, const QColor &color = Qt::black, bool completeOpening = false);
+    bool closeProject();
     bool loadImage(const QString &fileName);
     bool loadProject(const QString &fileName);
     bool saveProject();

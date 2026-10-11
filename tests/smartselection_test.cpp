@@ -79,6 +79,9 @@ int main(int argc,char **argv) {
     require(frameInsert.points().size()==5 && frameInsert.points()[0].pos==corners[0] && frameInsert.points()[2].pos==corners[1] && frameInsert.points()[3].pos==corners[2] && frameInsert.points()[4].pos==corners[3],"nearest-edge insert changes existing frame points/order");
     frameInsert.undoStack()->undo();require(frameInsert.points().size()==4,"frame insertion undo");frameInsert.undoStack()->redo();require(frameInsert.points().size()==5,"frame insertion redo");
     std::cout<<"Nearest-edge frame insertion preserves vertices/order and Undo/Redo: PASS\n";
+    require(frameInsert.closeProject() && !frameInsert.isImageLoaded() && frameInsert.leftImage().isNull() && frameInsert.points().isEmpty() && frameInsert.selectionObjects().isEmpty() && frameInsert.undoStack()->count()==0 && frameInsert.exportEye(false).isNull(),"Close Project does not clear current image/state/cache");
+    require(frameInsert.loadImage(insertionFile) && frameInsert.points().isEmpty(),"Close Project changed source or leaks frame into next image");
+    std::cout<<"Close Project clears source, frame, selections and undo; new image reopens: PASS\n";
     QTemporaryDir windowTemp; const QString windowFile=windowTemp.path()+"/window.png";
     QImage windowSource(40,20,QImage::Format_RGB32);windowSource.fill(Qt::black);
     windowSource.setPixelColor(12,10,Qt::white);windowSource.setPixelColor(28,10,Qt::white);
