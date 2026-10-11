@@ -15,6 +15,14 @@ class QTimer;
 class QJsonObject;
 class QKeyEvent;
 
+struct PictureFrameSettings {
+    bool enabled=false;
+    int width=24;
+    int style=1;
+    QColor color=QColor("#9b6a35");
+    bool operator==(const PictureFrameSettings &other) const {return enabled==other.enabled && width==other.width && style==other.style && color==other.color;}
+};
+
 struct SelectionObject {
     QString id;
     QString name;
@@ -39,6 +47,11 @@ class StereoViewWidget : public QWidget
 public:
     explicit StereoViewWidget(QWidget *parent = nullptr);
 
+    PictureFrameSettings pictureFrameSettings() const {return m_pictureFrame;}
+    void setPictureFrameSettings(const PictureFrameSettings &settings);
+    void applyPictureFrameSettings(const PictureFrameSettings &settings);
+    static QImage pictureFrameOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &settings);
+    static bool saveComposedPair(const QString &file,const QImage &left,const QImage &right,int padx,int pady,int gap,const QColor &background);
     int stereoWindowOffset() const { return m_processor.stereoWindowOffset(); }
     QImage stereoWindowPreview(int pixels) const { return m_processor.stereoWindowPreview(pixels); }
     void setStereoWindowOffset(int pixels);
@@ -314,6 +327,7 @@ private:
     QString m_imagePath;
     QString m_lastError;
 
+    PictureFrameSettings m_pictureFrame;
     QColor m_maskColor = Qt::black;
     float m_maskOpacity = 0.6f;
     int m_featherAmount = 0;

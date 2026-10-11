@@ -1,4 +1,4 @@
-StereoMask Mac R12 / 2.1.2
+StereoMask Mac R13 / 2.1.3
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.

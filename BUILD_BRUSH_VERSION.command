@@ -65,7 +65,7 @@ python3 scripts/repair_macos_bundle.py "$STEREOMASK_APP" 2>&1 | tee build-mac-br
 
 python3 scripts/install_macos_app.py "$STEREOMASK_APP" /Applications/StereoMask.app
 STEREOMASK_APP="/Applications/StereoMask.app"
-echo "Packaging verified. Starting the permanent StereoMask Mac R12…"
+echo "Packaging verified. Starting the permanent StereoMask Mac R13…"
 env -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
     "$STEREOMASK_APP/Contents/MacOS/StereoMask" > build-mac-brush/startup.log 2>&1 &
 STEREOMASK_PID=$!

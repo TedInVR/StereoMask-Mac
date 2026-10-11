@@ -2,6 +2,7 @@
 #include "updatechecker.h"
 #include "appversion.h"
 #include <QShortcut>
+#include <QKeyEvent>
 #include "mainwindow.h"
 #include "stereoviewwidget.h"
 #include <QMenuBar>
@@ -25,6 +26,8 @@
 #include <QUrl>
 #include <QColorDialog>
 #include <QDialogButtonBox>
+#include <QShortcut>
+#include <QKeyEvent>
 #include <QMessageBox>
 #include <QFutureWatcher>
 #include <QtConcurrent>
@@ -41,6 +44,8 @@
 #include <QInputDialog>
 #include <QSlider>
 #include <QDialogButtonBox>
+#include <QShortcut>
+#include <QKeyEvent>
 #include <QtMath>
 #include <cmath>
 
@@ -154,7 +159,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R12 (2.1.2)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R13 (2.1.3)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -677,6 +682,9 @@ void MainWindow::createToolbar()
     QToolBar *maskBar = addToolBar(tr("Mask"));
     configureToolbar(maskBar);
 
+    QAction *pictureFrame=addToolAction(maskBar,customIcon("polygon"),tr("Picture Frame"),tr("Add a colored flat, beveled or decorative border to your frame"));
+    pictureFrame->setObjectName("pictureFrameAction");
+    connect(pictureFrame,&QAction::triggered,this,&MainWindow::adjustPictureFrame);
     addToolGroupLabel(maskBar, tr("Mask"));
     QToolButton *autoMaskButton = new QToolButton(maskBar);
     autoMaskButton->setIcon(customIcon("autoMask"));
@@ -1113,7 +1121,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r12";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r13";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1140,7 +1148,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R12 (2.1.2)</h2>"
+        tr("<h2>StereoMask Mac R13 (2.1.3)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1227,8 +1235,8 @@ void MainWindow::exportImage()
     QString defaultName = info.absolutePath() + "/" + info.completeBaseName() + "_masked.png";
     QString fileName = QFileDialog::getSaveFileName(this, tr("Export Masked Image"), defaultName, tr("Images (*.png *.jpg)"));
     if (!fileName.isEmpty()) {
-        QImage left = m_viewWidget->leftImage();
-        QImage right = m_viewWidget->rightImage();
+        QImage left = m_viewWidget->exportEye(false);
+        QImage right = m_viewWidget->exportEye(true);
         QVector<MaskPoint> points = m_viewWidget->points();
         QColor maskColor = m_viewWidget->maskColor();
         float opacity = m_viewWidget->maskOpacity();
@@ -1249,8 +1257,8 @@ void MainWindow::exportImage()
         statusBar()->showMessage(tr("Please wait... Exporting (0%)"));
         m_exportWatcher->setProperty("fileName", fileName);
         m_exportWatcher->setFuture(QtConcurrent::run([=]() {
-            if (!cutout || cutoutBackground==4) return StereoViewWidget::saveMaskedPreview(fileName,left,right,revealLeft,revealRight,maskColor,opacity,padx,pady,interleavingSpace,bgColor);
-            return StereoViewWidget::saveCutout(fileName, left, right, points, revealLeft, revealRight, cutoutBackground, padx, pady, interleavingSpace, cutoutColor,true);
+            const QColor padding=(!cutout || cutoutBackground==4) ? bgColor : cutoutBackground==0 ? QColor(Qt::transparent) : cutoutBackground==1 ? QColor(Qt::black) : cutoutBackground==2 ? QColor(Qt::white) : cutoutColor;
+            return StereoViewWidget::saveComposedPair(fileName,left,right,padx,pady,interleavingSpace,padding);
         }));
     }
 }
@@ -1299,11 +1307,21 @@ void MainWindow::adjustStereoWindow() {
     explanation->setWordWrap(true);layout->addWidget(explanation);
     auto preview=new QLabel(&dialog);preview->setObjectName("stereoWindowPreview");preview->setAlignment(Qt::AlignCenter);preview->setMinimumSize(600,360);preview->setStyleSheet("background:#202020");layout->addWidget(preview);
     auto row=new QHBoxLayout;
-    row->addWidget(new QLabel(tr("Further back"),&dialog));
+    auto back=new QPushButton(tr("Push back"),&dialog);back->setObjectName("stereoWindowPushBack");row->addWidget(back);
     auto slider=new QSlider(Qt::Horizontal,&dialog);slider->setObjectName("stereoWindowSlider");
     const int limit=qMax(1,m_viewWidget->leftImage().width()/2);slider->setRange(-limit,limit);slider->setValue(m_viewWidget->stereoWindowOffset());row->addWidget(slider);
-    row->addWidget(new QLabel(tr("Forward"),&dialog));
+    auto forward=new QPushButton(tr("Pull forward"),&dialog);forward->setObjectName("stereoWindowPullForward");row->addWidget(forward);
     auto amount=new QSpinBox(&dialog);amount->setObjectName("stereoWindowPixels");amount->setRange(-limit,limit);amount->setValue(slider->value());amount->setSuffix(tr(" px"));row->addWidget(amount);
+    amount->setMinimumHeight(44);amount->setMinimumWidth(140);
+    amount->setStyleSheet("QSpinBox {padding-right: 36px;} QSpinBox::up-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:top right;} QSpinBox::down-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:bottom right;}");
+    back->setMinimumHeight(44);forward->setMinimumHeight(44);
+    auto step=[slider,amount](int direction){amount->interpretText();slider->setValue(slider->value()+direction);};
+    connect(back,&QPushButton::clicked,&dialog,[step]{step(-1);});
+    connect(forward,&QPushButton::clicked,&dialog,[step]{step(1);});
+    auto leftKey=new QShortcut(QKeySequence(Qt::Key_Left),&dialog);
+    auto rightKey=new QShortcut(QKeySequence(Qt::Key_Right),&dialog);
+    leftKey->setContext(Qt::WidgetWithChildrenShortcut);rightKey->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(leftKey,&QShortcut::activated,&dialog,[step]{step(-1);});connect(rightKey,&QShortcut::activated,&dialog,[step]{step(1);});
     auto reset=new QPushButton(tr("Reset to original"),&dialog);row->addWidget(reset);layout->addLayout(row);
     auto updatePreview=[&]{preview->setPixmap(QPixmap::fromImage(m_viewWidget->stereoWindowPreview(slider->value())).scaled(800,450,Qt::KeepAspectRatio,Qt::SmoothTransformation));};
     connect(slider,&QSlider::valueChanged,amount,&QSpinBox::setValue);
@@ -1313,9 +1331,43 @@ void MainWindow::adjustStereoWindow() {
     auto note=new QLabel(tr("Use this before framing and tracing. Existing frame points and selections stay in place.\nThe canvas size stays unchanged; shifting can expose empty side strips. Your original file stays untouched.\nApply stores the adjustment in the project; Save keeps it and Export uses the shifted pair."),&dialog);note->setWordWrap(true);layout->addWidget(note);
     auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    class HorizontalKeys : public QObject {
+        std::function<void(int)> change;
+    public:
+        HorizontalKeys(QObject *parent,std::function<void(int)> callback):QObject(parent),change(callback) {}
+        bool eventFilter(QObject *,QEvent *event) override {
+            if (event->type()!=QEvent::ShortcutOverride && event->type()!=QEvent::KeyPress) return false;
+            auto key=static_cast<QKeyEvent *>(event);
+            if (key->modifiers()!=Qt::NoModifier || (key->key()!=Qt::Key_Left && key->key()!=Qt::Key_Right)) return false;
+            if (event->type()==QEvent::KeyPress) change(key->key()==Qt::Key_Left ? -1 : 1);
+            event->accept();return true;
+        }
+    };
+    auto horizontalKeys=new HorizontalKeys(&dialog,step);
+    for (auto child:dialog.findChildren<QWidget *>()) child->installEventFilter(horizontalKeys);
+    dialog.installEventFilter(horizontalKeys);
     updatePreview();
     if (dialog.exec()==QDialog::Accepted) {
         m_viewWidget->setStereoWindowOffset(slider->value());
         statusBar()->showMessage(tr("Stereo window adjusted. Save your project to retain it; Undo restores the previous depth."),6000);
     }
+}
+
+void MainWindow::adjustPictureFrame() {
+    if (!m_viewWidget->isImageLoaded() || m_viewWidget->points().size()<3) {
+        QMessageBox::information(this,tr("Picture Frame"),tr("Make your basic frame with at least three points first."));return;
+    }
+    QDialog dialog(this);dialog.setObjectName("pictureFrameDialog");dialog.setWindowTitle(tr("Picture Frame"));
+    auto layout=new QVBoxLayout(&dialog);auto form=new QFormLayout;
+    auto settings=m_viewWidget->pictureFrameSettings();
+    auto enabled=new QCheckBox(tr("Show picture frame"),&dialog);enabled->setObjectName("pictureFrameEnabled");enabled->setChecked(settings.enabled);layout->addWidget(enabled);
+    auto width=new QSpinBox(&dialog);width->setObjectName("pictureFrameWidth");width->setRange(1,1000);width->setValue(settings.width);width->setSuffix(tr(" px"));form->addRow(tr("Border width:"),width);
+    auto style=new QComboBox(&dialog);style->setObjectName("pictureFrameStyle");style->addItems({tr("Flat"),tr("Beveled"),tr("Decorative Trim")});style->setCurrentIndex(settings.style);form->addRow(tr("Style:"),style);
+    auto color=new QPushButton(tr("Choose color…"),&dialog);color->setObjectName("pictureFrameColor");color->setStyleSheet(QString("background:%1").arg(settings.color.name()));form->addRow(tr("Frame color:"),color);
+    connect(color,&QPushButton::clicked,&dialog,[&]{const auto next=QColorDialog::getColor(settings.color,&dialog,tr("Picture frame color"));if(next.isValid()){settings.color=next;color->setStyleSheet(QString("background:%1").arg(next.name()));}});
+    layout->addLayout(form);
+    auto note=new QLabel(tr("The border grows outside your frame opening and follows its depth in each eye. Visible Add selections cover the border, so foreground objects appear over it. Width uses source-image pixels. Leave room inside the image edges; the border cannot extend beyond the canvas."),&dialog);note->setWordWrap(true);layout->addWidget(note);
+    auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(dialog.exec()==QDialog::Accepted){settings.enabled=enabled->isChecked();settings.width=width->value();settings.style=style->currentIndex();m_viewWidget->setPictureFrameSettings(settings);}
 }

@@ -21,6 +21,8 @@
 #include <QSpinBox>
 #include <QDialogButtonBox>
 #include <QPushButton>
+#include <QKeyEvent>
+#include <QCheckBox>
 #include <iostream>
 
 class BrowserCapture : public QObject {
@@ -126,7 +128,20 @@ int main(int argc, char **argv) {
         auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
         auto slider=dialog->findChild<QSlider *>("stereoWindowSlider");
         auto label=dialog->findChild<QLabel *>("stereoWindowPreview");
-        if (slider) slider->setValue(7);
+        auto spin=dialog->findChild<QSpinBox *>("stereoWindowPixels");
+        auto back=dialog->findChild<QPushButton *>("stereoWindowPushBack");
+        auto forward=dialog->findChild<QPushButton *>("stereoWindowPullForward");
+        if (!slider || !spin || !back || !forward || spin->height()<44) {dialog->reject();return;}
+        forward->click();back->click();if (spin->value()!=0) {dialog->reject();return;}
+        for (QWidget *target:QList<QWidget *>{spin,slider,back,dialog}) {
+            QKeyEvent right(QEvent::KeyPress,Qt::Key_Right,Qt::NoModifier);
+            QApplication::sendEvent(target,&right);
+            if (spin->value()!=1 || slider->value()!=1) {dialog->reject();return;}
+            QKeyEvent left(QEvent::KeyPress,Qt::Key_Left,Qt::NoModifier);
+            QApplication::sendEvent(target,&left);
+            if (spin->value()!=0 || slider->value()!=0) {dialog->reject();return;}
+        }
+        slider->setValue(7);
         windowPreview=slider && label && !label->pixmap().isNull() && view->stereoWindowOffset()==0 && dialog->grab().save("stereo-window-dialog.png");dialog->reject();
     });
     windowAction->trigger();if (!windowPreview || view->stereoWindowOffset()!=0) return 31;

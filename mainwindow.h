@@ -44,6 +44,7 @@ public:
     ~MainWindow();
 
 private slots:
+    void adjustPictureFrame();
     void adjustStereoWindow();
     void newProject();
     void openProject();

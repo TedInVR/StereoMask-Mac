@@ -637,6 +637,7 @@ QImage StereoViewWidget::exportEye(bool right) const {
     const QImage image=right ? m_processor.rightImage() : m_processor.leftImage();
     QByteArray key;QDataStream stream(&key,QIODevice::WriteOnly);
     stream<<image.cacheKey()<<m_smartRevision<<m_revealLeft.cacheKey()<<m_revealRight.cacheKey()
+          <<m_pictureFrame.enabled<<m_pictureFrame.width<<m_pictureFrame.style<<m_pictureFrame.color
           <<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
     for (const auto &point:m_points)
         stream<<point.pos<<point.disparity<<point.isCurve<<point.cp1<<point.cp2<<point.cp1Disparity<<point.cp2Disparity;
@@ -647,6 +648,10 @@ QImage StereoViewWidget::exportEye(bool right) const {
     const QImage opening=openingMask(right,appearance && m_previewFeatherEnabled ? m_featherAmount : 0);
     cached=appearance ? maskedPreviewEye(image,opening,m_maskColor,m_maskOpacity)
                       : cutoutEye(image,m_points,right,opening,m_cutoutBackground,m_cutoutColor,true);
+    if (m_pictureFrame.enabled && m_points.size()>=3) {
+        QPainter framePainter(&cached);
+        framePainter.drawImage(0,0,pictureFrameOverlay(image.size(),m_points,right,openingMask(right),m_pictureFrame));
+    }
     cachedKey=key;return cached;
 }
 QImage StereoViewWidget::openingMask(bool right, int feather) const {
@@ -980,6 +985,13 @@ void StereoViewWidget::brushAt(const QPoint &pos) {
 
 void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
     m_processor.setStereoWindowOffset(obj["stereoWindowOffset"].toInt(0));
+    const auto frame=obj["pictureFrame"].toObject();
+    m_pictureFrame=PictureFrameSettings{};
+    m_pictureFrame.enabled=frame["enabled"].toBool(false);
+    m_pictureFrame.width=qBound(1,frame["width"].toInt(24),1000);
+    m_pictureFrame.style=qBound(0,frame["style"].toInt(1),2);
+    const QColor frameColor(frame["color"].toString("#9b6a35"));
+    if (frameColor.isValid()) m_pictureFrame.color=frameColor;
     cancelLasso();
     m_completedLeft=decodeLassoPath(obj["lassoOutlineLeft"].toObject());
     m_completedRight=decodeLassoPath(obj["lassoOutlineRight"].toObject());
@@ -1012,6 +1024,7 @@ bool StereoViewWidget::loadImage(const QString &fileName)
     if (m_refining) { m_lastError=tr("Wait for Find edges to finish before opening another image."); return false; }
     cancelLasso();
     if (m_processor.loadSideBySide(fileName)) {
+        m_pictureFrame=PictureFrameSettings{};
         m_selectionObjects.clear(); m_baseRevealLeft=QImage(); m_baseRevealRight=QImage();
         m_baseOutlineLeft=QPainterPath(); m_baseOutlineRight=QPainterPath();
         emit selectionObjectsChanged();
@@ -1087,6 +1100,7 @@ bool StereoViewWidget::saveProject()
     obj["selectionObjects"]=selectionObjectsJson();
     obj["brushVersion"] = 5;
     obj["stereoWindowOffset"] = stereoWindowOffset();
+    obj["pictureFrame"]=QJsonObject{{"enabled",m_pictureFrame.enabled},{"width",m_pictureFrame.width},{"style",m_pictureFrame.style},{"color",m_pictureFrame.color.name(QColor::HexArgb)}};
     obj["lassoOutlineLeft"]=encodeLassoPath(m_completedLeft);
     obj["lassoOutlineRight"]=encodeLassoPath(m_completedRight);
     obj["smartHintsLeftPNG"] = encodeReveal(m_smartHintsLeft);
@@ -2861,4 +2875,53 @@ void StereoViewWidget::applyStereoWindowOffset(int pixels) {
     m_processor.setStereoWindowOffset(pixels); ++m_smartRevision;
     updateAnaglyphIfActive();update();
     if (m_autoSave) saveProject();
+}
+
+QImage StereoViewWidget::pictureFrameOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &settings) {
+    QImage layer(size,QImage::Format_ARGB32_Premultiplied);layer.fill(Qt::transparent);
+    if (!settings.enabled || points.size()<3 || opening.size()!=size) return layer;
+    const auto path=createImageMaskPath(points,QRectF(QPointF(0,0),QSizeF(size)),1.0f,right,false);
+    auto outside=[&](double width){QPainterPathStroker stroke;stroke.setWidth(2*width);stroke.setJoinStyle(Qt::MiterJoin);return stroke.createStroke(path).subtracted(path);};
+    const int width=qBound(1,settings.width,1000);
+    QPainter painter(&layer);painter.setRenderHint(QPainter::Antialiasing);
+    const auto band=outside(width);painter.fillPath(band,settings.color);
+    if (settings.style!=0) {
+        QLinearGradient bevel(0,0,size.width(),size.height());
+        bevel.setColorAt(0,settings.color.lighter(170));bevel.setColorAt(0.5,settings.color);bevel.setColorAt(1,settings.color.darker(180));
+        painter.fillPath(band,bevel);
+        const double trim=qMax(1.0,width*0.12);
+        painter.fillPath(band.subtracted(outside(qMax(0.1,width-trim))),settings.color.lighter(155));
+        painter.fillPath(outside(trim),settings.color.darker(180));
+        if (settings.style==2) {
+            for (double ratio:{0.35,0.68}) {
+                const auto groove=outside(width*ratio).subtracted(outside(qMax(0.1,width*ratio-trim*0.6)));
+                painter.fillPath(groove,settings.color.darker(170));
+            }
+        }
+    }
+    // The full ordered opening includes Add foreground regions outside the frame.
+    // Removing them from the border keeps preserved objects in front of it.
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);painter.drawImage(0,0,opening);painter.end();return layer;
+}
+bool StereoViewWidget::saveComposedPair(const QString &file,const QImage &left,const QImage &right,int px,int py,int gap,const QColor &background) {
+    if (left.isNull() || left.size()!=right.size() || px<0 || py<0 || gap<0) return false;
+    QImage result(2*left.width()+2*px+gap,left.height()+2*py,QImage::Format_ARGB32_Premultiplied);if(result.isNull())return false;
+    result.fill(background);QPainter painter(&result);painter.drawImage(px,py,left);painter.drawImage(px+left.width()+gap,py,right);painter.end();return result.save(file);
+}
+namespace {
+class PictureFrameCommand : public QUndoCommand {
+    StereoViewWidget *view;PictureFrameSettings before,after;
+public:
+    PictureFrameCommand(StereoViewWidget *widget,const PictureFrameSettings &next):view(widget),before(widget->pictureFrameSettings()),after(next){setText(QObject::tr("Change picture frame"));}
+    void undo() override {view->applyPictureFrameSettings(before);}
+    void redo() override {view->applyPictureFrameSettings(after);}
+};
+}
+void StereoViewWidget::setPictureFrameSettings(const PictureFrameSettings &settings) {
+    if (!isImageLoaded()) return;
+    auto next=settings;next.width=qBound(1,next.width,1000);next.style=qBound(0,next.style,2);if(!next.color.isValid())return;
+    if (!(next==m_pictureFrame)) m_undoStack->push(new PictureFrameCommand(this,next));
+}
+void StereoViewWidget::applyPictureFrameSettings(const PictureFrameSettings &settings) {
+    m_pictureFrame=settings;updateAnaglyphIfActive();update();if(m_autoSave)saveProject();
 }

@@ -50,6 +50,28 @@ static void drag(QWidget &view,QPoint from,QPoint to,Qt::KeyboardModifiers modif
 int main(int argc,char **argv) {
  QApplication app(argc,argv);
  try {
+    QTemporaryDir borderTemp;
+    QImage borderPair(480,180,QImage::Format_RGB32);borderPair.fill(QColor(60,130,65));
+    const QString borderFile=borderTemp.path()+"/border.png";require(borderPair.save(borderFile),"border fixture");
+    StereoViewWidget border; border.setAutoSave(false);require(border.loadImage(borderFile),"border load");
+    for (const QPointF &point:QVector<QPointF>{{80,50},{160,50},{160,130},{80,130}}) border.addPoint(point,0);
+    border.setCutoutBackground(0);
+    PictureFrameSettings decoration;decoration.enabled=true;decoration.width=12;decoration.style=0;decoration.color=Qt::red;
+    border.setPictureFrameSettings(decoration);
+    require(border.exportEye(false).pixelColor(75,90)==QColor(Qt::red),"border color/width");
+    require(border.exportEye(false).pixelColor(60,90).alpha()==0,"border outside alpha");
+    require(border.exportEye(false).pixelColor(100,90)==QColor(60,130,65),"border covers opening");
+    SelectionState foreground;SelectionObject leg;leg.id="leg";leg.path.addRect(QRectF(70,80,25,20));foreground.objects={leg};border.restoreSelectionState(foreground);
+    require(border.exportEye(false).pixelColor(75,90)==QColor(60,130,65),"foreground must cover border");
+    require(border.exportEye(true).pixelColor(75,90)==QColor(Qt::red),"foreground eye isolation");
+    require(border.saveProject(),"border save");StereoViewWidget borderReload;borderReload.setAutoSave(false);
+    require(borderReload.loadProject(borderTemp.path()+"/border.msk") && borderReload.pictureFrameSettings()==decoration && borderReload.exportEye(false)==border.exportEye(false),"border project roundtrip");
+    decoration.style=2;border.setPictureFrameSettings(decoration);require(border.exportEye(true).pixelColor(75,90)!=QColor(Qt::red),"decorative cache refresh");
+    border.undoStack()->undo();require(border.pictureFrameSettings().style==0,"border undo");border.undoStack()->redo();require(border.pictureFrameSettings().style==2,"border redo");
+    const QString borderExport=borderTemp.path()+"/export.png";
+    require(StereoViewWidget::saveComposedPair(borderExport,border.exportEye(false),border.exportEye(true),3,4,5,Qt::transparent),"border composed export");
+    QImage exportedBorder(borderExport);require(exportedBorder.pixelColor(75+3,90+4)==border.exportEye(false).pixelColor(75,90) && exportedBorder.pixelColor(0,0).alpha()==0,"border export pixels/padding");
+    std::cout<<"Picture-frame styles, foreground overlap, eye isolation, persistence, Undo/Redo and PNG export: PASS\n";
     QTemporaryDir windowTemp; const QString windowFile=windowTemp.path()+"/window.png";
     QImage windowSource(40,20,QImage::Format_RGB32);windowSource.fill(Qt::black);
     windowSource.setPixelColor(12,10,Qt::white);windowSource.setPixelColor(28,10,Qt::white);
