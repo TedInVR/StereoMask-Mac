@@ -204,12 +204,8 @@ void StereoImageProcessor::setStereoWindowOffset(int pixels) {
 }
 QImage StereoImageProcessor::stereoWindowPreview(int pixels) const {
     if (!isValid()) return {};
-    const int width=qMin(1000,m_originalLeft.width());
-    QImage left=m_originalLeft.scaledToWidth(width,Qt::SmoothTransformation);
-    QImage right=m_originalRight.scaledToWidth(width,Qt::SmoothTransformation);
-    const int delta=qRound(pixels*double(width)/m_originalLeft.width());
-    const int shift=qCeil(delta/2.0);
+    const int shift=qCeil(pixels/2.0);
     StereoImageProcessor preview;
-    preview.createAnaglyphFromEyes(shiftedEye(left,shift),shiftedEye(right,shift-delta));
+    preview.createAnaglyphFromEyes(shiftedEye(m_originalLeft,shift),shiftedEye(m_originalRight,shift-pixels));
     return preview.anaglyphImage();
 }

@@ -2,6 +2,7 @@
 #include "stereoviewwidget.h"
 #include <QApplication>
 #include <QComboBox>
+#include "stereowindowview.h"
 #include <QSlider>
 #include <QDesktopServices>
 #include <QFile>
@@ -153,7 +154,7 @@ int main(int argc, char **argv) {
     QTimer::singleShot(0,[&]{
         auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
         auto slider=dialog->findChild<QSlider *>("stereoWindowSlider");
-        auto label=dialog->findChild<QLabel *>("stereoWindowPreview");
+        auto label=dialog->findChild<StereoWindowView *>("stereoWindowPreview");
         auto spin=dialog->findChild<QSpinBox *>("stereoWindowPixels");
         auto back=dialog->findChild<QPushButton *>("stereoWindowPushBack");
         auto forward=dialog->findChild<QPushButton *>("stereoWindowPullForward");
@@ -168,7 +169,11 @@ int main(int argc, char **argv) {
             if (spin->value()!=0 || slider->value()!=0) {dialog->reject();return;}
         }
         slider->setValue(7);
-        windowPreview=slider && label && !label->pixmap().isNull() && view->stereoWindowOffset()==0 && dialog->grab().save("stereo-window-dialog.png");dialog->reject();
+        const double fitted=label->transform().m11();
+        label->zoomImage(2);if(label->transform().m11()<=fitted){dialog->reject();return;}
+        slider->setValue(8);if(label->transform().m11()!=fitted*2){dialog->reject();return;}
+        label->fitImage();if(qAbs(label->transform().m11()-fitted)>0.001){dialog->reject();return;}
+        windowPreview=slider && label && !label->scene()->items().isEmpty() && view->stereoWindowOffset()==0 && dialog->grab().save("stereo-window-dialog.png");dialog->reject();
     });
     windowAction->trigger();if (!windowPreview || view->stereoWindowOffset()!=0) return 31;
     QTimer::singleShot(0,[&]{auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;

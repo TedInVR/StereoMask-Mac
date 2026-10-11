@@ -1,4 +1,5 @@
 #include <QComboBox>
+#include "stereowindowview.h"
 #include "updatechecker.h"
 #include "appversion.h"
 #include <QShortcut>
@@ -161,7 +162,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R16 (2.1.6)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R17 (2.1.7)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
@@ -1229,7 +1230,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r16";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r17";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1256,7 +1257,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R16 (2.1.6)</h2>"
+        tr("<h2>StereoMask Mac R17 (2.1.7)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1426,7 +1427,17 @@ void MainWindow::adjustStereoWindow() {
     auto layout=new QVBoxLayout(&dialog);
     auto explanation=new QLabel(tr("Move the slider until the subject you want at the stereo window has aligned red/cyan edges.\nThis shifts the starting eye images; it does not adjust the custom frame."),&dialog);
     explanation->setWordWrap(true);layout->addWidget(explanation);
-    auto preview=new QLabel(&dialog);preview->setObjectName("stereoWindowPreview");preview->setAlignment(Qt::AlignCenter);preview->setMinimumSize(600,360);preview->setStyleSheet("background:#202020");layout->addWidget(preview);
+    auto preview=new StereoWindowView(&dialog);preview->setObjectName("stereoWindowPreview");layout->addWidget(preview,1);
+    auto zoomRow=new QHBoxLayout;
+    for(const auto &entry:QList<QPair<QString,double>>{{tr("Zoom +"),1.25},{tr("Zoom −"),0.8},{tr("Fit (Command+0)"),0}}) {
+        auto button=new QPushButton(entry.first,&dialog);zoomRow->addWidget(button);
+        connect(button,&QPushButton::clicked,&dialog,[preview,factor=entry.second]{if(factor==0)preview->fitImage();else preview->zoomImage(factor);});
+    }
+    auto panHint=new QLabel(tr("Scroll to zoom; drag the image to inspect another area."),&dialog);zoomRow->addWidget(panHint);zoomRow->addStretch();layout->addLayout(zoomRow);
+    for(const auto &entry:QList<QPair<QString,double>>{{"Ctrl++",1.25},{"Ctrl+=",1.25},{"Ctrl+-",0.8},{"Ctrl+0",0}}) {
+        auto shortcut=new QShortcut(QKeySequence(entry.first),&dialog);
+        connect(shortcut,&QShortcut::activated,&dialog,[preview,factor=entry.second]{if(factor==0)preview->fitImage();else preview->zoomImage(factor);});
+    }
     auto row=new QHBoxLayout;
     auto back=new QPushButton(tr("Push back"),&dialog);back->setObjectName("stereoWindowPushBack");row->addWidget(back);
     auto slider=new QSlider(Qt::Horizontal,&dialog);slider->setObjectName("stereoWindowSlider");
@@ -1444,7 +1455,7 @@ void MainWindow::adjustStereoWindow() {
     leftKey->setContext(Qt::WidgetWithChildrenShortcut);rightKey->setContext(Qt::WidgetWithChildrenShortcut);
     connect(leftKey,&QShortcut::activated,&dialog,[step]{step(-1);});connect(rightKey,&QShortcut::activated,&dialog,[step]{step(1);});
     auto reset=new QPushButton(tr("Reset to original"),&dialog);row->addWidget(reset);layout->addLayout(row);
-    auto updatePreview=[&]{preview->setPixmap(QPixmap::fromImage(m_viewWidget->stereoWindowPreview(slider->value())).scaled(800,450,Qt::KeepAspectRatio,Qt::SmoothTransformation));};
+    auto updatePreview=[&]{preview->setImage(m_viewWidget->stereoWindowPreview(slider->value()));};
     connect(slider,&QSlider::valueChanged,amount,&QSpinBox::setValue);
     connect(amount,QOverload<int>::of(&QSpinBox::valueChanged),slider,&QSlider::setValue);
     connect(slider,&QSlider::valueChanged,&dialog,[&]{updatePreview();});
@@ -1468,6 +1479,7 @@ void MainWindow::adjustStereoWindow() {
     for (auto child:dialog.findChildren<QWidget *>()) child->installEventFilter(horizontalKeys);
     dialog.installEventFilter(horizontalKeys);
     updatePreview();
+    dialog.showMaximized();
     if (dialog.exec()==QDialog::Accepted) {
         m_viewWidget->setStereoWindowOffset(slider->value());
         statusBar()->showMessage(tr("Stereo window adjusted. Save your project to retain it; Undo restores the previous depth."),6000);

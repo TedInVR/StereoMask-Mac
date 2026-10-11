@@ -23,8 +23,8 @@ void MainWindow::startGuidedProcess() {
     auto bothEyes=new QCheckBox(tr("I have checked both eye images"));bothEyes->setObjectName("guidedBothEyes");layout->addWidget(bothEyes);
     auto action=new QPushButton;action->setObjectName("guidedAction");layout->addWidget(action);
     auto extra=new QPushButton;extra->setObjectName("guidedExtra");layout->addWidget(extra);
-    auto message=new QLabel;message->setObjectName("guidedMessage");message->setWordWrap(true);layout->addWidget(message);layout->addStretch();
-    auto row=new QHBoxLayout;auto back=new QPushButton(tr("Back"));auto skip=new QPushButton(tr("Skip"));auto next=new QPushButton(tr("Next"));back->setObjectName("guidedBack");skip->setObjectName("guidedSkip");next->setObjectName("guidedNext");row->addWidget(back);row->addWidget(skip);row->addWidget(next);layout->addLayout(row);
+    auto message=new QLabel;message->setObjectName("guidedMessage");message->setWordWrap(true);layout->addWidget(message);layout->addSpacing(12);
+    auto row=new QHBoxLayout;auto back=new QPushButton(tr("Back"));auto skip=new QPushButton(tr("Skip"));auto next=new QPushButton(tr("Next"));back->setObjectName("guidedBack");skip->setObjectName("guidedSkip");next->setObjectName("guidedNext");row->addWidget(back);row->addWidget(skip);row->addWidget(next);layout->addLayout(row);layout->addStretch();
     dock->setProperty("step",0);dock->setProperty("goal",0);dock->setProperty("trail",QVariantList{});
     auto reveal=[this](int section){if(auto toggle=findChild<QAction *>(QString("sectionToggle%1").arg(section)))toggle->setChecked(true);};
     auto refresh=[=] {

@@ -1,6 +1,6 @@
 {
-  "version": "2.1.6",
+  "version": "2.1.7",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R16 adds Guided Process, complete Main Menu, direct Stereo Window access, Open Recent, clear frame/background controls, and readable/customizable keyboard shortcuts with saved preferences and conflict checks. Source download; build on your Mac."
+  "notes": "Mac R17 enlarges Stereo Window to a maximized full-resolution inspection view, adds zoom/fit buttons, Command shortcuts, wheel zoom and drag panning; Guided Process navigation stays near its instructions. Source download; build on your Mac."
 }

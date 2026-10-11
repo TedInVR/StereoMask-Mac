@@ -1,4 +1,4 @@
-StereoMask Mac R16 / 2.1.6
+StereoMask Mac R17 / 2.1.7
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -25,4 +25,4 @@ First optional step: Stereo Window opens an anaglyph slider. Apply commits
 one undoable source-depth adjustment; Cancel leaves it unchanged. Save
 the project to keep it. Help explains the new tool and side strips.
 
-R16: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.
+R17: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.

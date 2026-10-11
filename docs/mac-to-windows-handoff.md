@@ -141,3 +141,12 @@ No changes are being made to the Windows repository by this handoff.
 ## Decision record
 
 For each numbered item record: Adopt / Adapt / Defer / Decline, Subbiah's requested behavior, supporting dependencies, implementation commit and Windows verification. Unreviewed items remain unapproved.
+
+
+## R17 follow-up (2026-10-11): separate approval items
+
+16. Stereo Window inspection: maximized dialog, full-resolution anaglyph, zoom/fit buttons, Command-plus/minus/zero, wheel zoom and drag panning. Depth changes preserve zoom/inspection area. Both manual and Guided Process invoke the same dialog. Files: stereowindowview.h, mainwindow.cpp, stereoimageprocessor.cpp. Windows key names should be adapted. Full-resolution generation increases memory/time for large images.
+
+17. Guided Process navigation placement: Back/Next/Skip/Finish moved immediately below instructions and step controls, rather than the panel bottom. File: guidedprocess.cpp.
+
+As with items 1–15, explain each follow-up to Subbiah and obtain his individual Adopt/Adapt/Defer/Decline decision before implementing it.
