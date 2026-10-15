@@ -3,6 +3,9 @@
 #include <QApplication>
 #include <QComboBox>
 #include "stereowindowview.h"
+#include "operationprogress.h"
+#include <QThread>
+#include <QStatusBar>
 #include <QSlider>
 #include <QDesktopServices>
 #include <QFile>
@@ -46,6 +49,67 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     QLocale::setDefault(QLocale(QLocale::English,QLocale::UnitedStates));
     QStandardPaths::setTestModeEnabled(true);
+    {
+        QMainWindow host;host.resize(640,400);host.show();app.processEvents();
+        bool responsive=false;
+        const bool hadCursor=QApplication::overrideCursor()!=nullptr;
+        {
+            OperationProgress progress(&host,"StereoMask - Working","Matching opposite-eye edges...");
+            auto immediate=host.findChild<QDialog *>("operationProgress");
+            auto initialMessage=immediate ? immediate->findChild<QLabel *>("operationMessage") : nullptr;
+            if(!initialMessage || !initialMessage->isVisible() || initialMessage->text().isEmpty() || initialMessage->height()<=0)return 60;
+            const QImage panel=immediate->grab().toImage();
+            if(immediate->testAttribute(Qt::WA_TranslucentBackground) || immediate->windowOpacity()!=1.0 ||
+               panel.pixelColor(8,8)!=QColor("#25282c")) {
+                std::cerr<<"Processing panel must have an opaque painted background\n";return 60;
+            }
+            QTimer::singleShot(0,&host,[&] {
+                auto dialog=host.findChild<QDialog *>("operationProgress");
+                auto message=dialog ? dialog->findChild<QLabel *>("operationMessage") : nullptr;
+                responsive=dialog && dialog->isVisible() && dialog->windowFlags().testFlag(Qt::FramelessWindowHint) &&
+                    message && message->isVisible() && message->text()=="Matching opposite-eye edges..." && message->height()>0 &&
+                    host.statusBar()->currentMessage()=="Matching opposite-eye edges...";
+                if(dialog)dialog->grab().save("mac-operation-progress-ui.png");
+            });
+            auto guiThread=QThread::currentThread();
+            const bool worker=progress.run([guiThread] {QThread::msleep(100);return QThread::currentThread()!=guiThread;});
+            if(!worker || !responsive){std::cerr<<"Progress dialog blocked painting/timers or calculation ran on GUI thread\n";return 60;}
+            progress.setStage("Updating masks...");
+            if(host.statusBar()->currentMessage()!="Updating masks...")return 60;
+            progress.setStage("Applying selection to the left eye...");
+            if(initialMessage->text()!="Applying selection to the left eye...")return 60;
+        }
+        if(host.findChild<QDialog *>("operationProgress") || (QApplication::overrideCursor()!=nullptr)!=hadCursor)return 60;
+        host.close();
+    }
+    {
+        QTemporaryDir openingTemp;
+        QImage image(480,180,QImage::Format_RGB32);image.fill(Qt::green);
+        const QString path=openingTemp.path()+"/opening.png";
+        if(!image.save(path))return 61;
+        StereoViewWidget openingView;openingView.setAutoSave(false);openingView.resize(800,400);openingView.show();app.processEvents();
+        bool openingMessage=false;
+        QTimer observe;observe.setSingleShot(true);
+        QObject::connect(&observe,&QTimer::timeout,&openingView,[&] {
+            auto dialog=openingView.findChild<QDialog *>("operationProgress");
+            auto label=dialog ? dialog->findChild<QLabel *>("operationMessage") : nullptr;
+            openingMessage=dialog && dialog->isVisible() && label && label->text()=="Opening image: opening.png";
+        });
+        observe.start(0);
+        if(!openingView.loadImage(path) || !openingMessage)return 61;
+        observe.stop();
+        if(openingView.findChild<QDialog *>("operationProgress"))return 61;
+        const QImage before=openingView.leftImage();
+        if(openingView.loadImage(openingTemp.path()+"/missing.png") || openingView.lastError().isEmpty() || openingView.leftImage()!=before)return 61;
+        openingView.close();
+    }
+    {
+        const bool had=QApplication::overrideCursor()!=nullptr;
+        auto host=new QMainWindow;
+        auto progress=std::make_unique<OperationProgress>(host,"Lifetime test","Closing host");
+        delete host;progress->setStage("Host closed");progress.reset();
+        if((QApplication::overrideCursor()!=nullptr)!=had)return 94;
+    }
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
@@ -151,9 +215,15 @@ int main(int argc, char **argv) {
     if(!window.findChild<QSpinBox *>("framePointDepth"))return 50;
     auto closeAction=window.findChild<QAction *>("closeProjectAction");
     if (!fileControls || !editControls || !closeAction || fileControls->actions().contains(windowAction) || !editControls->actions().contains(windowAction) || !fileControls->actions().contains(closeAction)) return 46;
+    auto colorTools=window.findChild<QComboBox *>("outOfFrameToolCombo");auto tolerance=window.findChild<QSpinBox *>("colorSelectionTolerance");
+    if(!colorTools || colorTools->findData(9)<0 || colorTools->findData(10)<0 || !tolerance || tolerance->minimum()!=0 || tolerance->maximum()!=255)return 90;
+    for(int mode:{9,10}){int index=colorTools->findData(mode);colorTools->setCurrentIndex(index);QMetaObject::invokeMethod(colorTools,"activated",Qt::DirectConnection,Q_ARG(int,index));if(!tolerance->isEnabled() || view->brushMode()!=mode)return 91;}
+    colorTools->setCurrentIndex(colorTools->findData(1));QMetaObject::invokeMethod(colorTools,"activated",Qt::DirectConnection,Q_ARG(int,colorTools->currentIndex()));
+    auto wheelPan=window.findChild<QAction *>("editingWheelPanAction");if(!wheelPan || wheelPan->isChecked() || view->editingWheelPan())return 92;wheelPan->trigger();if(!view->editingWheelPan())return 93;wheelPan->trigger();
     bool windowPreview=false;
     QTimer::singleShot(0,[&]{
         auto dialog=window.findChild<QDialog *>("stereoWindowDialog");if (!dialog) return;
+        auto previewMode=dialog->findChild<QCheckBox *>("stereoWindowAnaglyph");if(!previewMode || !previewMode->isChecked()){dialog->reject();return;}previewMode->setChecked(false);previewMode->setChecked(true);
         auto slider=dialog->findChild<QSlider *>("stereoWindowSlider");
         auto label=dialog->findChild<StereoWindowView *>("stereoWindowPreview");
         auto spin=dialog->findChild<QSpinBox *>("stereoWindowPixels");
@@ -324,6 +394,28 @@ int main(int argc, char **argv) {
         creativeView->undoStack()->undo();if(!creativeView->textObjects().isEmpty())return 85;
         std::cout<<"Shape dialog Apply/undo and text/bubble editing Apply/Cancel/undo: PASS\n";
     }
+    bool effectsWired=false,textApplyFeedback=false;
+    QTimer::singleShot(0,&window,[&] {
+        auto dialog=window.findChild<QDialog *>("stereoTextDialog");if(!dialog)return;
+        dialog->showNormal();dialog->resize(1200,900);QApplication::processEvents();
+        auto relief=dialog->findChild<QComboBox *>("textRelief");auto surface=dialog->findChild<QComboBox *>("textSurface");
+        auto x=dialog->findChild<QSpinBox *>("textTiltX"),y=dialog->findChild<QSpinBox *>("textTiltY"),z=dialog->findChild<QSpinBox *>("textTiltZ");
+        auto depth=dialog->findChild<QSpinBox *>("textReliefSize");
+        effectsWired=relief && relief->count()==3 && surface && surface->count()==2 && x && y && z && depth;
+        if(effectsWired){relief->setCurrentIndex(1);surface->setCurrentIndex(1);x->setValue(20);y->setValue(-30);z->setValue(12);depth->setValue(5);dialog->grab().save("mac-text-effects-ui.png");
+            QTimer::singleShot(0,&window,[&] {
+                auto progress=window.findChild<QDialog *>("operationProgress");
+                auto label=progress ? progress->findChild<QLabel *>("operationMessage") : nullptr;
+                textApplyFeedback=progress && progress->isVisible() && label && label->text().contains("Rendering text and bubbles for the left eye");
+                if(progress)progress->grab().save("mac-apply-text-progress-ui.png");
+            });
+            dialog->accept();}
+        else dialog->reject();
+    });
+    QMetaObject::invokeMethod(&window,"editStereoText",Qt::DirectConnection);
+    if(!effectsWired || !textApplyFeedback || view->textObjects().isEmpty())return 62;
+    const auto appliedText=view->textObjects().last();
+    if(appliedText.relief!=1 || appliedText.surface!=1 || appliedText.reliefSize!=5 || appliedText.tiltX!=20 || appliedText.tiltY!=-30 || appliedText.tiltZ!=12)return 62;
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

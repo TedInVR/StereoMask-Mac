@@ -39,7 +39,8 @@ protected:
         QGraphicsView::resizeEvent(event);if(fitting) fitImage();
     }
     void wheelEvent(QWheelEvent *event) override {
-        if(event->angleDelta().y()) zoomImage(std::pow(1.2,event->angleDelta().y()/120.0));
+        const double delta=event->angleDelta().isNull() ? event->pixelDelta().y() : event->angleDelta().y();
+        if(delta) zoomImage(std::pow(1.2,delta/120.0));
         event->accept();
     }
 };

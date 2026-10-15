@@ -1,6 +1,6 @@
 {
-  "version": "2.1.8",
+  "version": "2.3.0",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R18 adds editable frame shapes, per-eye drop shadows, and stereo text/speech/thought bubbles with fonts, depth, fill opacity, draggable size/tails and project/undo support. Updated guide and optional Windows handoff. Source download; build on your Mac."
+  "notes": "Mac R19 integrates Subbiah\u2019s Windows v2.3.0: Fuzzy/Color selection, text emboss/engrave/cutout and stereo tilt, frame alignment/order fixes, processing feedback and cached text rendering. Mac controls and updater retained. Source download; build on your Mac."
 }

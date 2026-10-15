@@ -13,7 +13,7 @@ public:
 
     int stereoWindowOffset() const { return m_windowOffset; }
     void setStereoWindowOffset(int pixels);
-    QImage stereoWindowPreview(int pixels) const;
+    QImage stereoWindowPreview(int pixels, bool anaglyph = true, bool swapped = false) const;
     static QImage shiftedEye(const QImage &source, int shift);
     bool loadSideBySide(const QString &fileName);
     
@@ -31,7 +31,8 @@ public:
 
 private:
 
-    QImage m_originalLeft, m_originalRight;
+    QImage m_originalLeft;
+    QImage m_originalRight;
     int m_windowOffset = 0;
     QImage m_left;
     QImage m_right;
@@ -40,4 +41,3 @@ private:
 };
 
 #endif // STEREOIMAGEPROCESSOR_H
-

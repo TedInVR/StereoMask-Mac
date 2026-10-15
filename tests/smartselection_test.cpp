@@ -1,5 +1,6 @@
 #include "smartselection.h"
 #include "stereoviewwidget.h"
+#include "decorations.h"
 #include <QApplication>
 #include <QPainter>
 #include <QTemporaryDir>
@@ -53,7 +54,7 @@ int main(int argc,char **argv) {
     QTemporaryDir borderTemp;
     QImage borderPair(480,180,QImage::Format_RGB32);borderPair.fill(QColor(60,130,65));
     const QString borderFile=borderTemp.path()+"/border.png";require(borderPair.save(borderFile),"border fixture");
-    StereoViewWidget border; border.setAutoSave(false);require(border.loadImage(borderFile),"border load");
+    StereoViewWidget border;border.setAutoSave(false);require(border.loadImage(borderFile),"border load");
     for (const QPointF &point:QVector<QPointF>{{80,50},{160,50},{160,130},{80,130}}) border.addPoint(point,0);
     border.setCutoutBackground(0);
     PictureFrameSettings decoration;decoration.enabled=true;decoration.width=12;decoration.style=0;decoration.color=Qt::red;
@@ -70,25 +71,33 @@ int main(int argc,char **argv) {
     border.undoStack()->undo();require(border.pictureFrameSettings().style==0,"border undo");border.undoStack()->redo();require(border.pictureFrameSettings().style==2,"border redo");
     const QString borderExport=borderTemp.path()+"/export.png";
     require(StereoViewWidget::saveComposedPair(borderExport,border.exportEye(false),border.exportEye(true),3,4,5,Qt::transparent),"border composed export");
-    QImage exportedBorder(borderExport);require(exportedBorder.pixelColor(75+3,90+4)==border.exportEye(false).pixelColor(75,90) && exportedBorder.pixelColor(0,0).alpha()==0,"border export pixels/padding");
+    QImage exportedBorder(borderExport);require(exportedBorder.pixelColor(78,94)==border.exportEye(false).pixelColor(75,90) && exportedBorder.pixelColor(0,0).alpha()==0,"border export pixels/padding");
     std::cout<<"Picture-frame styles, foreground overlap, eye isolation, persistence, Undo/Redo and PNG export: PASS\n";
-    StereoViewWidget frameInsert;frameInsert.setAutoSave(false);frameInsert.resize(800,400);const QString insertionFile=borderTemp.path()+"/insert.png";require(borderPair.save(insertionFile) && frameInsert.loadImage(insertionFile),"frame insertion fixture");frameInsert.fitView();
-    const QVector<QPointF> corners={{80,50},{160,50},{160,130},{80,130}};for(const auto &p:corners)frameInsert.addPoint(p,0);
-    QMouseEvent addFramePoint(QEvent::MouseButtonPress,QPointF(199,169),QPointF(199,169),Qt::RightButton,Qt::RightButton,Qt::NoModifier);
-    QApplication::sendEvent(&frameInsert,&addFramePoint);
-    require(frameInsert.points().size()==5 && frameInsert.points()[0].pos==corners[0] && frameInsert.points()[2].pos==corners[1] && frameInsert.points()[3].pos==corners[2] && frameInsert.points()[4].pos==corners[3],"nearest-edge insert changes existing frame points/order");
-    frameInsert.undoStack()->undo();require(frameInsert.points().size()==4,"frame insertion undo");frameInsert.undoStack()->redo();require(frameInsert.points().size()==5,"frame insertion redo");
-    std::cout<<"Nearest-edge frame insertion preserves vertices/order and Undo/Redo: PASS\n";
-    require(frameInsert.closeProject() && !frameInsert.isImageLoaded() && frameInsert.leftImage().isNull() && frameInsert.points().isEmpty() && frameInsert.selectionObjects().isEmpty() && frameInsert.undoStack()->count()==0 && frameInsert.exportEye(false).isNull(),"Close Project does not clear current image/state/cache");
-    require(frameInsert.loadImage(insertionFile) && frameInsert.points().isEmpty(),"Close Project changed source or leaks frame into next image");
-    std::cout<<"Close Project clears source, frame, selections and undo; new image reopens: PASS\n";
-    QTemporaryDir windowTemp; const QString windowFile=windowTemp.path()+"/window.png";
+
+    const QRectF shapeBounds(60,20,140,140);
+    border.replaceFramePoints(shapePoints(0,shapeBounds,10));require(border.points().size()==4,"rectangle shape vertices");
+    border.undoStack()->undo();require(border.points().size()==4,"shape replacement undo");border.undoStack()->redo();
+    const auto ellipse=shapePoints(2,shapeBounds,10);border.replaceFramePoints(ellipse);
+    require(border.points().size()==4 && border.points()[0].isCurve && border.points()[2].cp1Disparity==10,"ellipse shape geometry");
+    const QImage ellipseOpening=border.openingMask(false);const auto first=border.points()[0],second=border.points()[1];
+    const QPointF curveMiddle=(first.pos+first.cp1*3+first.cp2*3+second.pos)/8;
+    border.addPoint(curveMiddle,10,1);require(border.points().size()==5 && border.points()[0].isCurve && border.points()[1].isCurve,"curve insertion split");
+    const QImage splitOpening=border.openingMask(false);int curveDifference=0;
+    for(int y=0;y<splitOpening.height();++y)for(int x=0;x<splitOpening.width();++x)curveDifference+=qAbs(qAlpha(ellipseOpening.pixel(x,y))-qAlpha(splitOpening.pixel(x,y)));
+    require(curveDifference<600,"curve split preserves shape");
+    std::cout<<"Rectangle/Oval frame shapes and curve-preserving point insertion: PASS\n";
+
+    QTemporaryDir windowTemp;
+    const QString windowFile=windowTemp.path()+"/window.png";
     QImage windowSource(40,20,QImage::Format_RGB32);windowSource.fill(Qt::black);
     windowSource.setPixelColor(12,10,Qt::white);windowSource.setPixelColor(28,10,Qt::white);
     require(windowSource.save(windowFile),"window fixture save");
     StereoViewWidget windowView;windowView.setAutoSave(false);require(windowView.loadImage(windowFile),"window load");
     const auto originalWindowLeft=windowView.leftImage();
     require(windowView.stereoWindowPreview(-4).pixelColor(10,10)==QColor(Qt::white),"window anaglyph alignment");
+    const auto sideBySideWindow=windowView.stereoWindowPreview(-4,false);
+    require(sideBySideWindow.size()==QSize(40,20) && sideBySideWindow.pixelColor(10,10)==QColor(Qt::white) &&
+            sideBySideWindow.pixelColor(30,10)==QColor(Qt::white),"window side-by-side alignment");
     require(windowView.stereoWindowOffset()==0 && windowView.leftImage()==originalWindowLeft,"window preview mutates source");
     windowView.setStereoWindowOffset(-4);
     require(windowView.leftImage().pixelColor(10,10)==QColor(Qt::white) && windowView.rightImage().pixelColor(10,10)==QColor(Qt::white),"window relative shift");
@@ -97,12 +106,64 @@ int main(int argc,char **argv) {
     windowView.undoStack()->undo();require(windowView.stereoWindowOffset()==0 && windowView.leftImage()==originalWindowLeft,"window undo");
     windowView.undoStack()->redo();require(windowView.stereoWindowOffset()==-4,"window redo");
     require(windowView.saveProject(),"window save");
-    StereoViewWidget windowReload;windowReload.setAutoSave(false);require(windowReload.loadProject(windowTemp.path()+"/window.msk") && windowReload.stereoWindowOffset()==-4 && windowReload.leftImage()==windowView.leftImage(),"window project roundtrip");
-    StereoViewWidget windowSidecar;windowSidecar.setAutoSave(false);require(windowSidecar.loadImage(windowFile) && windowSidecar.stereoWindowOffset()==-4,"window sidecar roundtrip");
+    StereoViewWidget windowReload;windowReload.setAutoSave(false);
+    require(windowReload.loadProject(windowTemp.path()+"/window.msk") && windowReload.stereoWindowOffset()==-4 && windowReload.leftImage()==windowView.leftImage(),"window project roundtrip");
+    StereoViewWidget windowSidecar;windowSidecar.setAutoSave(false);
+    require(windowSidecar.loadImage(windowFile) && windowSidecar.stereoWindowOffset()==-4,"window sidecar roundtrip");
     windowView.addPoint(QPointF(3,3),0);windowView.setStereoWindowOffset(3);
     require(windowView.points()[0].pos==QPointF(3,3) && windowView.leftImage().pixelColor(14,10)==QColor(Qt::white) && windowView.rightImage().pixelColor(7,10)==QColor(Qt::white),"window frame separation/odd shift");
-    windowView.setStereoWindowOffset(0);require(windowView.leftImage()==originalWindowLeft && QImage(windowFile)==windowSource,"window reset/original preserved");
-    std::cout<<"Stereo-window pixels, preview, export/cache, alpha, Undo/Redo, project/sidecar, frame separation and original preservation: PASS\n";
+    windowView.setStereoWindowOffset(0);
+    require(windowView.leftImage()==originalWindowLeft && QImage(windowFile)==windowSource,"window reset/original preserved");
+    std::cout<<"Stereo-window pixels, SBS/anaglyph preview, export/cache, alpha, Undo/Redo, project/sidecar, frame separation and original preservation: PASS\n";
+
+    QImage insertionPair(720,240,QImage::Format_RGB32);insertionPair.fill(Qt::gray);
+    const QString insertionFile=windowTemp.path()+"/insert.png";require(insertionPair.save(insertionFile),"frame insertion fixture save");
+    StereoViewWidget insertionView;insertionView.setAutoSave(false);insertionView.resize(800,400);
+    require(insertionView.loadImage(insertionFile),"frame insertion fixture load");insertionView.fitView();
+    const QVector<QPointF> corners={{80,50},{160,50},{160,130},{80,130}};
+    for(const auto &point:corners) insertionView.addPoint(point,0);
+    QMouseEvent addFramePoint(QEvent::MouseButtonPress,QPointF(159,129),QPointF(159,129),Qt::RightButton,Qt::RightButton,Qt::NoModifier);
+    QApplication::sendEvent(&insertionView,&addFramePoint);
+    require(insertionView.points().size()==5 && insertionView.points()[0].pos==corners[0] &&
+            insertionView.points()[2].pos==corners[1] && insertionView.points()[3].pos==corners[2] &&
+            insertionView.points()[4].pos==corners[3],"nearest-edge insert changes frame order");
+    insertionView.undoStack()->undo();require(insertionView.points().size()==4,"frame insertion undo");
+    insertionView.undoStack()->redo();require(insertionView.points().size()==5,"frame insertion redo");
+    std::cout<<"Nearest-edge frame insertion preserves vertices/order and Undo/Redo: PASS\n";
+
+    StereoViewWidget drawnFrame;drawnFrame.setAutoSave(false);drawnFrame.resize(800,400);
+    require(drawnFrame.loadImage(insertionFile),"right-click frame fixture load");drawnFrame.fitView();
+    require(drawnFrame.points().isEmpty(),"fresh right-click frame must start empty");
+    auto rightClickFrame=[&](QPointF point) {
+        // At fit scale 1 the left image's pixel origin is (19,79).
+        const QPointF widgetPoint=point+QPointF(19,79);
+        QMouseEvent press(QEvent::MouseButtonPress,widgetPoint,widgetPoint,Qt::RightButton,Qt::RightButton,Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease,widgetPoint,widgetPoint,Qt::RightButton,Qt::NoButton,Qt::NoModifier);
+        QApplication::sendEvent(&drawnFrame,&press);QApplication::sendEvent(&drawnFrame,&release);
+    };
+    for(const auto &point:corners) rightClickFrame(point);
+    require(drawnFrame.points().size()==4,"right-click frame point count");
+    for(int i=0;i<corners.size();++i) {
+        require(QLineF(drawnFrame.points()[i].pos,corners[i]).length()<0.01,"new frame must retain click order and close to first point");
+    }
+    rightClickFrame(QPointF(80,90));
+    require(drawnFrame.points().size()==5 && drawnFrame.points().first().pos==corners.first() &&
+            drawnFrame.points().last().pos==QPointF(80,90),"closing-edge insertion must preserve first vertex");
+    drawnFrame.undoStack()->undo();require(drawnFrame.points().size()==4 && drawnFrame.points().first().pos==corners.first(),"closing-edge insertion undo");
+    drawnFrame.undoStack()->redo();require(drawnFrame.points().size()==5 && drawnFrame.points().last().pos==QPointF(80,90),"closing-edge insertion redo");
+    std::cout<<"Right-click frame creation retains click order and closing-edge insertion retains first vertex: PASS\n";
+
+    border.replaceFramePoints(ellipse);
+    const auto closing=ellipse.last();
+    const QPointF closingMiddle=(closing.pos+closing.cp1*3+closing.cp2*3+ellipse.first().pos)/8;
+    border.addPoint(closingMiddle,10,ellipse.size());
+    require(border.points().size()==5 && border.points().first().pos==ellipse.first().pos && border.points().last().isCurve,"closing curve split keeps first vertex");
+    const QImage closingOpening=border.openingMask(false);int closingDifference=0;
+    for(int y=0;y<closingOpening.height();++y)for(int x=0;x<closingOpening.width();++x)
+        closingDifference+=qAbs(qAlpha(ellipseOpening.pixel(x,y))-qAlpha(closingOpening.pixel(x,y)));
+    require(closingDifference<600,"closing curve split preserves shape");
+    border.undoStack()->undo();require(border.points().size()==4,"closing curve split undo");
+    border.undoStack()->redo();require(border.points().size()==5,"closing curve split redo");
 
     const QImage image=fixture();const QImage seed=hints(image.size());const QRect region(30,12,170,156);
     QImage rough(image.size(),QImage::Format_ARGB32_Premultiplied);rough.fill(Qt::transparent);
@@ -214,10 +275,39 @@ int main(int argc,char **argv) {
     QMouseEvent panMove(QEvent::MouseMove,QPointF(230,220),QPointF(230,220),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(&view,&panMove);
     QMouseEvent panRelease(QEvent::MouseButtonRelease,QPointF(230,220),QPointF(230,220),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(&view,&panRelease);
     QKeyEvent spaceUp(QEvent::KeyRelease,Qt::Key_Space,Qt::NoModifier);QApplication::sendEvent(&view,&spaceUp);
-    QWheelEvent wheel(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&view,&wheel);
-    require(view.zoom()>1,"wheel did not zoom");require(view.hasLasso(),"pan/zoom discarded unfinished lasso");
+    require(!view.editingWheelPan(),"Mac keeps wheel zoom by default");
+    const auto originalZoom=view.zoom();QWheelEvent defaultZoom(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&view,&defaultZoom);require(view.zoom()>originalZoom,"Mac default wheel zoom retained");view.setZoom(originalZoom);
+    view.setEditingWheelPan(true);
+    const auto beforeWheelPan=view.panOffset();const auto beforeWheelZoom=view.zoom();
+    QWheelEvent scroll(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&view,&scroll);
+    require(view.zoom()==beforeWheelZoom && view.panOffset().x()==beforeWheelPan.x() && view.panOffset().y()>beforeWheelPan.y(),"ordinary lasso wheel must pan vertically without zoom");
+    QWheelEvent wheel(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,120),Qt::NoButton,Qt::ControlModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&view,&wheel);
+    require(view.zoom()>1,"Ctrl+wheel did not zoom");require(view.hasLasso(),"pan/zoom discarded unfinished lasso");
     view.fitView();require(view.zoom()==1 && view.hasLasso(),"Fit view lost outline");view.applyLasso();
     require(view.revealMask(false)==lasso,"pan/zoom changed lasso source geometry");
+    for(int mode:{0,7,8}) {
+        view.setBrushMode(mode);view.fitView();view.setZoom(2);
+        const auto frameBefore=view.points();const int undoBefore=view.undoStack()->index();
+        QWheelEvent down(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(&view,&down);
+        require(view.zoom()==2 && view.panOffset().x()==0 && view.panOffset().y()<0,"point-edit wheel down must scroll both eyes without zoom");
+        const auto afterDown=view.panOffset();
+        QWheelEvent smooth(QPointF(210,210),QPointF(210,210),QPoint(0,24),QPoint(),Qt::NoButton,Qt::NoModifier,Qt::ScrollUpdate,false);
+        QApplication::sendEvent(&view,&smooth);
+        require(view.zoom()==2 && view.panOffset().y()>afterDown.y(),"trackpad pixel scrolling must pan vertically");
+        const auto beforeHorizontal=view.panOffset();
+        QWheelEvent horizontal(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,-120),Qt::NoButton,Qt::ShiftModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(&view,&horizontal);
+        require(view.zoom()==2 && view.panOffset().x()<beforeHorizontal.x() && view.panOffset().y()==beforeHorizontal.y(),"Shift+wheel must scroll horizontally only");
+        QWheelEvent horizontalReverse(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(120,0),Qt::NoButton,Qt::ShiftModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(&view,&horizontalReverse);
+        require(QLineF(view.panOffset(),beforeHorizontal).length()<0.01,"native horizontal Shift+wheel must reverse horizontal scroll");
+        QWheelEvent zoomOut(QPointF(210,210),QPointF(210,210),QPoint(),QPoint(0,-120),Qt::NoButton,Qt::ControlModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(&view,&zoomOut);
+        require(view.zoom()<2 && view.undoStack()->index()==undoBefore && view.points().size()==frameBefore.size(),"Ctrl+wheel zoom out must not edit frame/history");
+        for(int i=0;i<frameBefore.size();++i)require(view.points()[i].pos==frameBefore[i].pos,"wheel changes frame geometry");
+    }
+    view.fitView();view.setBrushMode(7);
     view.clearPaintedReveal();require(view.revealMask(false).isNull() && view.revealMask(true).isNull(),"clear reveal failed");
     view.undoStack()->undo();require(view.revealMask(false)==lasso && view.revealMask(true)==otherEye,"clear reveal undo failed");
     // Multi-selection regression: closed first contour automatically commits on a new click.
@@ -676,4 +766,3 @@ int main(int argc,char **argv) {
  } catch(const std::exception &e) {std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
  return 0;
 }
-

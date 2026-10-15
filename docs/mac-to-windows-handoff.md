@@ -1,5 +1,7 @@
 # Mac-to-Windows handoff: optional changes after Windows v2.1.1
 
+**Update 2026-10-15:** Windows v2.3.0 has already incorporated the main R12–R18 features below. Mac R19 integrates its reciprocal additions. For current changes and individually reviewable corrections, see [Mac R19 integration notes](mac-r19-integration-notes.md). The original item-by-item approval guidance remains in force for new Windows work.
+
 Prepared 2026-10-11 for Subbiah Rathinagiri and his coding assistant.
 Mac maintainer: Theodore Whitten (TedInVR). Original StereoMask author: Subbiah Rathinagiri. Original license and credits remain intact.
 
@@ -8,7 +10,7 @@ Mac maintainer: Theodore Whitten (TedInVR). Original StereoMask author: Subbiah 
 This is a technical handoff, not a request to merge every Mac preference into Windows.
 Baseline: upstream Windows commit `c1186d71b281610ac887753d5451b419857697a9`, incorporated into Mac R11 / 2.1.1.
 Reviewed implementation: Mac R16 / 2.1.6, commit [f0365b7](https://github.com/TedInVR/StereoMask-Mac/commit/f0365b7f59279cdcfbdd50ac1da7e837cd8608ad).
-The initial items cover subsequent R12–R16 work; follow-up sections add R17 and R18. For the R18 source, use the same repository commit as this document (Mac 2.1.8), rather than the historical R16 reference above. Existing selection objects, pairing and other Windows v2.1.1 features are not claimed as new Mac contributions.
+The initial items cover subsequent R12–R16 work; follow-up sections add R17 and R18. The R18 source is commit 705095b74b5e54bbb99e020dffb6d8c3ee0ca8a7 (Mac 2.1.8); the current tree now contains R19. Existing selection objects, pairing and other Windows v2.1.1 features are not claimed as new Mac contributions.
 Read the source at that commit; this handoff describes intent and boundaries. DEVELOPMENT_LOG.md contains revision-specific implementation and validation notes.
 
 ## Instructions for the receiving AI

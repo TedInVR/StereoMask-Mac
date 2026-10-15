@@ -17,14 +17,19 @@ class QJsonObject;
 class QKeyEvent;
 
 struct PictureFrameSettings {
-    bool enabled=false;
-    int width=24;
-    int style=1;
-    QColor color=QColor("#9b6a35");
-    bool shadowEnabled=false;
-    int shadowOpacity=60, shadowDistance=24, shadowAngle=45, shadowBlur=12, shadowSpread=0;
-    QColor shadowColor=Qt::black;
-    bool operator==(const PictureFrameSettings &other) const {return enabled==other.enabled && width==other.width && style==other.style && color==other.color && shadowEnabled==other.shadowEnabled && shadowOpacity==other.shadowOpacity && shadowDistance==other.shadowDistance && shadowAngle==other.shadowAngle && shadowBlur==other.shadowBlur && shadowSpread==other.shadowSpread && shadowColor==other.shadowColor;}
+    bool enabled = false;
+    int width = 24;
+    int style = 1;
+    QColor color = QColor("#9b6a35");
+    bool shadowEnabled = false;
+    int shadowOpacity = 60, shadowDistance = 24, shadowAngle = 45, shadowBlur = 12, shadowSpread = 0;
+    QColor shadowColor = Qt::black;
+    bool operator==(const PictureFrameSettings &other) const {
+        return enabled == other.enabled && width == other.width && style == other.style && color == other.color &&
+               shadowEnabled == other.shadowEnabled && shadowOpacity == other.shadowOpacity &&
+               shadowDistance == other.shadowDistance && shadowAngle == other.shadowAngle &&
+               shadowBlur == other.shadowBlur && shadowSpread == other.shadowSpread && shadowColor == other.shadowColor;
+    }
 };
 
 struct SelectionObject {
@@ -45,19 +50,25 @@ struct SelectionState {
     QPainterPath outlineLeft, outlineRight;
 };
 
+class OperationProgress;
+
 class StereoViewWidget : public QWidget
 {
     Q_OBJECT
 public:
     explicit StereoViewWidget(QWidget *parent = nullptr);
 
-    PictureFrameSettings pictureFrameSettings() const {return m_pictureFrame;}
+    PictureFrameSettings pictureFrameSettings() const { return m_pictureFrame; }
     void setPictureFrameSettings(const PictureFrameSettings &settings);
     void applyPictureFrameSettings(const PictureFrameSettings &settings);
-    static QImage pictureFrameOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &settings);
-    static bool saveComposedPair(const QString &file,const QImage &left,const QImage &right,int padx,int pady,int gap,const QColor &background);
+    static QImage pictureFrameOverlay(QSize size, const QVector<MaskPoint> &points, bool right,
+                                      const QImage &opening, const PictureFrameSettings &settings);
+    static bool saveComposedPair(const QString &file, const QImage &left, const QImage &right,
+                                 int padx, int pady, int gap, const QColor &background);
+    static QImage shadowOverlay(QSize size,const QVector<MaskPoint> &points,bool right,
+                                const QImage &opening,const PictureFrameSettings &settings);
     int stereoWindowOffset() const { return m_processor.stereoWindowOffset(); }
-    QImage stereoWindowPreview(int pixels) const { return m_processor.stereoWindowPreview(pixels); }
+    QImage stereoWindowPreview(int pixels, bool anaglyph = true) const { return m_processor.stereoWindowPreview(pixels, anaglyph, m_swapSides); }
     void setStereoWindowOffset(int pixels);
     void applyStereoWindowOffset(int pixels);
     QVector<SelectionObject> selectionObjects() const { return m_selectionObjects; }
@@ -74,9 +85,13 @@ public:
     bool editSelection(const QString &id);
     void selectSelection(const QString &id) { m_activeSelectionId=id; update(); }
 
-    void setBrushMode(int mode) { if (m_refining) return; setPolygonMoveEnabled(false); if (mode < 7) { if (m_lassoClosed) finishLasso(); else cancelLasso(); } m_brushMode = mode; m_panMode = false; m_freehandMode = false; m_pickingColor = false; setCursor((mode == 3 || mode >= 7) ? Qt::CrossCursor : mode ? Qt::BlankCursor : Qt::ArrowCursor); setFocus(); update(); }
+    void setBrushMode(int mode) { if (m_refining) return; setPolygonMoveEnabled(false); if (mode != 7 && mode != 8) { if (m_lassoClosed) finishLasso(); else cancelLasso(); } m_brushMode = mode; m_panMode = false; m_freehandMode = false; m_pickingColor = false; setCursor((mode == 3 || mode >= 7) ? Qt::CrossCursor : mode ? Qt::BlankCursor : Qt::ArrowCursor); setFocus(); update(); }
     int brushMode() const { return m_brushMode; }
     void setBrushSize(int size) { m_brushSize = qBound(1, size, 1000); update(); }
+    void setColorSelectionTolerance(int value) { m_colorSelectionTolerance=qBound(0,value,255); }
+    int colorSelectionTolerance() const { return m_colorSelectionTolerance; }
+    static QImage colorSelectionMask(const QImage &image, const QPoint &seed, int tolerance, bool contiguous);
+    void applyColorSelection(bool right, const QPoint &seed, bool contiguous);
     void setCutoutColor(const QColor &color) { m_cutoutColor = color; setCutoutBackground(3); }
     QColor cutoutColor() const { return m_cutoutColor; }
     void beginColorPick() { m_pickingColor = true; setCursor(Qt::CrossCursor); setFocus(); update(); }
@@ -85,13 +100,12 @@ public:
     int cutoutBackground() const { return m_cutoutBackground; }
     QImage revealMask(bool right) const { return right ? m_revealRight : m_revealLeft; }
     QImage openingMask(bool right, int feather = 0) const;
-    QImage exportEye(bool right,bool includeText=true) const;
-    QVector<StereoText> textObjects() const {return m_textObjects;}
+    QImage exportEye(bool right, bool includeText = true) const;
+    QVector<StereoText> textObjects() const { return m_textObjects; }
     void setTextObjects(const QVector<StereoText> &texts);
     void applyTextObjects(const QVector<StereoText> &texts);
     void replaceFramePoints(const QVector<MaskPoint> &points);
     void applyFramePoints(const QVector<MaskPoint> &points);
-    static QImage shadowOverlay(QSize size,const QVector<MaskPoint> &points,bool right,const QImage &opening,const PictureFrameSettings &settings);
     void applyReveal(bool right, const QImage &mask);
     void applySmartHints(bool right, const QImage &hints, const QRect &region);
     void findEdges();
@@ -117,9 +131,9 @@ public:
     static QImage maskedPreviewEye(const QImage &image, const QImage &opening, const QColor &color, float opacity);
     static bool saveMaskedPreview(const QString &file, const QImage &left, const QImage &right, const QImage &openingLeft, const QImage &openingRight, const QColor &color, float opacity, int padx, int pady, int gap, const QColor &paddingColor);
     static bool saveCutout(const QString &file, const QImage &left, const QImage &right, const QVector<MaskPoint> &points, const QImage &revealLeft, const QImage &revealRight, int background, int padx, int pady, int gap, const QColor &color = Qt::black, bool completeOpening = false);
-    bool closeProject();
     bool loadImage(const QString &fileName);
     bool loadProject(const QString &fileName);
+    bool closeProject();
     bool saveProject();
     QString lastError() const { return m_lastError; }
     bool saveImage(const QString &fileName, const QColor &maskColor, float opacity, int padx, int pady, const QColor &bgColor, int interleavingSpace, std::function<void(int)> progressCallback = nullptr);
@@ -128,7 +142,10 @@ public:
     bool isImageLoaded() const { return !m_imagePath.isEmpty() && m_processor.isValid(); }
     void setAnaglyphMode(bool enabled);
     void setSwapSides(bool enabled);
+    bool swapSides() const { return m_swapSides; }
     void setZoom(float zoom);
+    void setEditingWheelPan(bool enabled) {m_editingWheelPan=enabled;}
+    bool editingWheelPan() const {return m_editingWheelPan;}
     void setLockHorizontal(bool locked) { m_lockHorizontal = locked; }
     void setLockVertical(bool locked) { m_lockVertical = locked; }
     void setSnapEnabled(bool enabled) { m_snapEnabled = enabled; }
@@ -247,6 +264,7 @@ private:
     QRect m_smartRegionLeft, m_smartRegionRight, m_beforeRegion;
     QPointF m_regionStart;
     bool m_selectingRegion = false, m_smartRight = false, m_refining = false;
+    OperationProgress *m_operationProgress = nullptr;
     int m_smartRevision = 0;
     void loadBrushSettings(const QJsonObject &obj);
     QImage m_revealTintLeft, m_revealTintRight;
@@ -268,7 +286,7 @@ private:
     void rebuildLassoSegment(int index);
     void rebuildLassoClosing();
     void removeLassoPoint(int index);
-    int m_brushMode = 0, m_brushSize = 40, m_cutoutBackground = 4;
+    int m_brushMode = 0, m_brushSize = 40, m_colorSelectionTolerance = 32, m_cutoutBackground = 4;
     bool m_cutout = false, m_brushing = false, m_brushRight = false;
     QImage m_revealLeft, m_revealRight, m_beforeStroke;
     QPointF m_lastBrushPoint;
@@ -346,8 +364,13 @@ private:
     bool m_previewFeatherEnabled = false;
     bool m_maskPreviewEnabled = true;
     bool m_cleanPreviewEnabled = false;
+    bool m_editingWheelPan = false;
     mutable QByteArray m_exportKeyLeft,m_exportKeyRight;
     mutable QImage m_exportCacheLeft,m_exportCacheRight;
+    QByteArray textOverlayKey(bool right) const;
+    QImage cachedTextOverlay(bool right) const;
+    mutable QByteArray m_textKeyLeft,m_textKeyRight;
+    mutable QImage m_textCacheLeft,m_textCacheRight;
     int m_padx = 0;
     int m_pady = 0;
     QColor m_bgColor = Qt::white;
@@ -356,4 +379,3 @@ private:
 };
 
 #endif // STEREOVIEWWIDGET_H
-

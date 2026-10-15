@@ -52,7 +52,7 @@ QString fixedKeys() {return QStringLiteral(
 "<tr><td>Command + click a lasso anchor</td><td>Remove that anchor</td></tr>"
 "<tr><td>Shift + click a lasso edge</td><td>Insert an anchor</td></tr>"
 "<tr><td>Shift + drag a polygon</td><td>Constrain its movement horizontally</td></tr>"
-"<tr><td>Scroll wheel</td><td>Zoom toward the pointer</td></tr>"
+"<tr><td>Scroll wheel</td><td>Zoom toward the pointer by default. With Scroll to Pan While Editing enabled: scroll pans, Shift+scroll pans horizontally, Command+scroll zooms in frame/lasso modes. Middle-drag pans.</td></tr>"
 "<tr><td>Right-click a frame edge</td><td>Add a frame point</td></tr></table>"
 "<p>Command, Control, Option and Shift are spelled out here. Context-sensitive editing gestures remain fixed to protect drawing and text entry.</p>");}
 }

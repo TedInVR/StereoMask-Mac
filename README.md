@@ -1,14 +1,22 @@
 # StereoMask Mac
 
-StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theodore Whitten**. This repository contains the Mac port and foreground-editing improvements based on StereoMask 2.0.0, now incorporating Subbiah’s Windows v2.1.1 additions.
+StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theodore Whitten**. This repository contains the Mac port and foreground-editing improvements based on StereoMask 2.0.0, now incorporating Subbiah’s Windows v2.3.0 additions.
 
 - **Subbiah Rathinagiri (S. Rathinagiri):** original StereoMask author and upstream PC/Windows development.
 - **Theodore Whitten:** Mac port, editing workflow and foreground-selection improvements, developed with Codex assistance.
 - **Upstream:** [SRathinaGiri/StereoMask](https://github.com/SRathinaGiri/StereoMask).
 
-The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.1.1 incorporates the earlier Mac foreground tools; Mac R18 brings its subsequent enhancements back to the Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.3.0 incorporates the Mac workflow and creative tools plus new Windows enhancements. Mac R19 / 2.3.0 brings the new color selection, text effects, geometry fixes and processing feedback back to Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
 
 ## Features
+
+- Fuzzy Select (connected color region) and Select by Color Threshold, with tolerance, per-eye Add/Subtract History objects and Undo.
+- Flat/Embossed/Engraved text, colored letters/cutout plates and X/Y/Z stereo orientation, persistent with old-project defaults.
+- Directional alignment uses selected extremes; Align Depth uses median disparity. Near-edge insertion and closing-edge order fixes.
+- Opaque processing messages and worker snapshots; applied text caches shared by preview/export.
+- Optional SBS Stereo Window preview; Mac retains anaglyph and wheel zoom defaults. View can enable editing-wheel panning.
+- appversion.h supplies runtime, CMake project and macOS bundle version.
+
 
 - Create Frame Shapes: rectangle, square, oval and circle; drag/resize, stereo depth, editable cubic dots and curve-preserving point insertion.
 - Drop Shadow: opacity, distance, direction, softness, spread and color; per-eye background composition and transparent PNG.

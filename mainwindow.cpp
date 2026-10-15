@@ -2,6 +2,7 @@
 #include "stereowindowview.h"
 #include "updatechecker.h"
 #include "appversion.h"
+#include "operationprogress.h"
 #include <QShortcut>
 #include <QKeyEvent>
 #include "mainwindow.h"
@@ -162,10 +163,10 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R18 (2.1.8)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R19 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
-                                     "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"), frame);
+                                     "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
         text->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(text);
         
@@ -248,6 +249,7 @@ void MainWindow::setupConnections()
     connect(m_exportWatcher, &QFutureWatcher<bool>::finished, this, [this](){
         QString fileName = m_exportWatcher->property("fileName").toString();
         bool exported = m_exportWatcher->result();
+        m_exportProgress.reset();
         if (exported) {
             statusBar()->showMessage(tr("Image exported to %1").arg(QFileInfo(fileName).fileName()), 5000);
         } else {
@@ -754,10 +756,18 @@ void MainWindow::createToolbar()
     brushMode->addItem(tr("Erase Brush"),2);
     brushMode->addItem(tr("Polygonal lasso"),7);
     brushMode->addItem(tr("Smart polygon lasso"),8);
+    brushMode->addItem(tr("Fuzzy Select region"),9);
+    brushMode->addItem(tr("Select by color threshold"),10);
     brushBar->addWidget(brushMode);
     brushBar->addWidget(new QLabel(tr(" Size: ")));
     QSpinBox *brushSize = new QSpinBox; brushSize->setRange(1, 1000); brushSize->setValue(40);
     brushBar->addWidget(brushSize);
+    brushBar->addWidget(new QLabel(tr(" Color tolerance: ")));
+    QSpinBox *colorTolerance=new QSpinBox;colorTolerance->setObjectName("colorSelectionTolerance");
+    colorTolerance->setRange(0,255);colorTolerance->setValue(m_viewWidget->colorSelectionTolerance());
+    colorTolerance->setToolTip(tr("RGB distance from the clicked color: 0 selects exact matches; 255 accepts every color"));
+    colorTolerance->setEnabled(false);brushBar->addWidget(colorTolerance);
+    connect(colorTolerance,QOverload<int>::of(&QSpinBox::valueChanged),m_viewWidget,&StereoViewWidget::setColorSelectionTolerance);
     brushBar->addWidget(new QLabel(tr(" Out-of-Frame Background: ")));
     QComboBox *brushBackground = new QComboBox;
     brushBackground->addItems({tr("Transparent (PNG)"), tr("Black"), tr("White")});
@@ -830,19 +840,20 @@ void MainWindow::createToolbar()
         } else m_viewWidget->setCutoutBackground(mode);
         m_viewWidget->setFocus();
     });
-    connect(m_viewWidget, &StereoViewWidget::brushSettingsLoaded, this, [brushMode, brushBackground](int mode, int background) {
-        brushMode->setCurrentIndex(brushMode->findData(mode)); brushBackground->setCurrentIndex(background);
+    connect(m_viewWidget, &StereoViewWidget::brushSettingsLoaded, this, [brushMode, brushBackground, colorTolerance](int mode, int background) {
+        brushMode->setCurrentIndex(brushMode->findData(mode)); brushBackground->setCurrentIndex(background);colorTolerance->setEnabled(mode==9||mode==10);
     });
     connect(brushMode, QOverload<int>::of(&QComboBox::activated), this, [this, anaglyph, pan, brushMode](int index) {
         const int mode=brushMode->itemData(index).toInt();
-        if (mode) { anaglyph->setChecked(false); pan->setChecked(false); m_viewWidget->setCutoutBackground(m_viewWidget->cutoutBackground()); }
+        if (mode) { anaglyph->setChecked(false); pan->setChecked(false);if(auto clean=findChild<QAction *>("cleanPreviewAction"))clean->setChecked(false);for(auto action:findChildren<QAction *>())if(action->text()==tr("Preview Result"))action->setChecked(false); m_viewWidget->setCutoutBackground(m_viewWidget->cutoutBackground()); }
         m_viewWidget->setBrushMode(mode);
         const QStringList tips={tr("Edit frame points"), tr("Select Brush: paint areas to preserve outside the frame. [ smaller, ] larger."), tr("Erase Brush: remove preserved areas outside the frame. The frame stays open."),
             tr("Drag a loose box around one leg in one eye; leave background space around it."), tr("Paint a small Keep stroke safely inside the leg, then Find edges."),
             tr("Paint Remove on unwanted background, then Find edges again."), tr("Erase incorrect Keep/Remove hints, then Find edges again."), tr("Polygonal lasso: click around the edge, then click the first point to close. Apply selection keeps it. Delete steps back; drag points to adjust."), tr("Magnetic lasso: click short sections along the edge; drag points to adjust; Delete steps back; Enter closes, Apply selection keeps it.")};
-        statusBar()->showMessage(tips.value(mode));
+        statusBar()->showMessage(mode==9 ? tr("Fuzzy Select: click a connected color region; adjust Color tolerance to widen the range.") : mode==10 ? tr("Select by color: click a color to select matching pixels throughout that eye.") : tips.value(mode));
     });
 
+    connect(brushMode,QOverload<int>::of(&QComboBox::activated),this,[colorTolerance,brushMode](int index){const int mode=brushMode->itemData(index).toInt();colorTolerance->setEnabled(mode==9||mode==10);});
     QAction *freehand = addToolAction(maskBar, customIcon("freehand"), tr("Freehand"), tr("Draw a freehand mask when no mask points exist"));
     freehand->setCheckable(true);
     freehand->setEnabled(m_viewWidget->isImageLoaded() && m_viewWidget->canFreehandDraw());
@@ -1065,6 +1076,11 @@ void MainWindow::createToolbar()
     auto shapes=createBar->addAction(tr("Shapes…"));shapes->setObjectName("frameShapesAction");connect(shapes,&QAction::triggered,this,&MainWindow::createFrameShape);
     createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
     addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction")});
+    auto wheelPan=navigationBar->addAction(tr("Scroll to Pan While Editing"));wheelPan->setObjectName("editingWheelPanAction");wheelPan->setCheckable(true);
+    wheelPan->setToolTip(tr("Optional: while editing frame dots or lassos, scroll pans vertically, Shift+scroll pans horizontally, Command+scroll zooms. Off keeps ordinary scroll zoom. Middle-drag always pans."));
+    {QSettings prefs;wheelPan->setChecked(prefs.value("navigation/editingWheelPan",false).toBool());m_viewWidget->setEditingWheelPan(wheelPan->isChecked());}
+    connect(wheelPan,&QAction::toggled,this,[this](bool on){m_viewWidget->setEditingWheelPan(on);QSettings prefs;prefs.setValue("navigation/editingWheelPan",on);});
+    for(auto action:menuBar()->actions())if(action->menu() && action->text()==tr("&View"))action->menu()->addAction(wheelPan);
     const QList<QList<QToolBar *>> sections={{fileViewBar},{navigationBar},{stereoBar},{createBar},{editMaskBar,transformBar},{brushBar,selectionBar,maskBar},{helpBar}};
     const QStringList names={tr("File"),tr("View"),tr("Stereo Window"),tr("Create Frame"),tr("Edit Frame"),tr("Out-of-Frame"),tr("Help")};
     for(const auto &rows:sections)for(auto row:rows){removeToolBarBreak(row);removeToolBar(row);}
@@ -1106,7 +1122,7 @@ void MainWindow::createToolbar()
                     auto choices=group->addMenu(label);
                     for(int n=0;n<combo->count();++n){auto choice=choices->addAction(combo->itemText(n));connect(choice,&QAction::triggered,this,[combo,n]{combo->setCurrentIndex(n);QMetaObject::invokeMethod(combo,"activated",Qt::DirectConnection,Q_ARG(int,n));});}
                 } else if(auto spin=qobject_cast<QSpinBox *>(widget)) {
-                    QString label=spin==frameDepth ? tr("Frame Point Depth") : spin==brushSize ? tr("Brush Size") : tr("Background Opacity");
+                    QString label=spin==frameDepth ? tr("Frame Point Depth") : spin==brushSize ? tr("Brush Size") : spin==colorTolerance ? tr("Color Tolerance") : tr("Background Opacity");
                     auto setValue=group->addAction(label+tr("…"));connect(setValue,&QAction::triggered,this,[this,spin,label]{bool ok=false;int value=QInputDialog::getInt(this,label,tr("Value"),spin->value(),spin->minimum(),spin->maximum(),spin->singleStep(),&ok);if(ok)spin->setValue(value);});
                 } else if(widget==autoMaskButton) {
                     group->addMenu(autoMaskMenu);
@@ -1233,7 +1249,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r18";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r19";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1260,7 +1276,7 @@ void MainWindow::checkForUpdates()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R18 (2.1.8)</h2>"
+        tr("<h2>StereoMask Mac R19 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1271,7 +1287,7 @@ void MainWindow::showAbout()
            "<p><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
            "<p>A collaborative effort. StereoMask's MIT license is preserved.</p>"
            "<p>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>"
-           "<p>Built for the stereo photography community.</p>"), QMessageBox::Ok, this);
+           "<p>Built for the stereo photography community.</p>").arg(STEREOMASK_VERSION), QMessageBox::Ok, this);
     aboutBox.setTextFormat(Qt::RichText);
     aboutBox.setTextInteractionFlags(Qt::TextBrowserInteraction);
     for (QLabel *label : aboutBox.findChildren<QLabel *>()) label->setOpenExternalLinks(true);
@@ -1332,6 +1348,7 @@ void MainWindow::saveProject()
     if (!m_viewWidget->isImageLoaded()) return;
     if (m_viewWidget->lassoClosed()) m_viewWidget->finishLasso();
     else if (m_viewWidget->hasLasso()) { statusBar()->showMessage(tr("Close or apply the unfinished outline before saving.")); return; }
+    OperationProgress progress(this,tr("StereoMask — Save project"),tr("Saving frame points, selections and project settings…"));
     if (m_viewWidget->saveProject()) {
         QFileInfo info(m_viewWidget->imagePath());
         QString mskPath = info.absolutePath() + "/" + info.completeBaseName() + ".msk";
@@ -1360,7 +1377,9 @@ void MainWindow::exportImage()
     QString defaultName = info.absolutePath() + "/" + info.completeBaseName() + "_masked.png";
     QString fileName = QFileDialog::getSaveFileName(this, tr("Export Image"), defaultName, tr("Images (*.png *.jpg)"));
     if (!fileName.isEmpty()) {
+        m_exportProgress=std::make_unique<OperationProgress>(this,tr("StereoMask — Export image"),tr("Rendering the full-resolution left eye…"));
         QImage left = m_viewWidget->exportEye(false);
+        m_exportProgress->setStage(tr("Rendering the full-resolution right eye…"));
         QImage right = m_viewWidget->exportEye(true);
         QVector<MaskPoint> points = m_viewWidget->points();
         QColor maskColor = m_viewWidget->maskColor();
@@ -1376,10 +1395,11 @@ void MainWindow::exportImage()
         const int previewFeather=(!cutout || cutoutBackground==4) && m_viewWidget->previewFeatherEnabled() ? featherAmount : 0;
         QImage revealLeft = m_viewWidget->openingMask(false,previewFeather), revealRight = m_viewWidget->openingMask(true,previewFeather);
         if (cutout && cutoutBackground == 0 && !fileName.endsWith(".png", Qt::CaseInsensitive)) {
+            m_exportProgress.reset();
             QMessageBox::information(this, tr("Transparent export"), tr("Choose a PNG filename to preserve transparency."));
             return;
         }
-        statusBar()->showMessage(tr("Please wait... Exporting (0%)"));
+        m_exportProgress->setStage(tr("Encoding and writing the exported image…"));
         m_exportWatcher->setProperty("fileName", fileName);
         m_exportWatcher->setFuture(QtConcurrent::run([=]() {
             const QColor padding=(!cutout || cutoutBackground==4) ? bgColor : cutoutBackground==0 ? QColor(Qt::transparent) : cutoutBackground==1 ? QColor(Qt::black) : cutoutBackground==2 ? QColor(Qt::white) : cutoutColor;
@@ -1421,71 +1441,144 @@ void MainWindow::toggleSwapSides(bool enabled)
 }
 
 
-void MainWindow::adjustStereoWindow() {
+void MainWindow::adjustStereoWindow()
+{
     if (!m_viewWidget->isImageLoaded()) return;
     if (m_viewWidget->hasLasso() || m_viewWidget->polygonMoveEnabled()) {
-        QMessageBox::information(this,tr("Stereo Window"),tr("Apply or cancel the unfinished lasso and turn Move polygon off before adjusting the stereo window.")); return;
+        QMessageBox::information(this, tr("Stereo Window"),
+                                 tr("Apply or cancel the unfinished lasso and turn Move polygon off before adjusting the stereo window."));
+        return;
     }
-    QDialog dialog(this);dialog.setObjectName("stereoWindowDialog");dialog.setWindowTitle(tr("Stereo Window — starting image depth"));
-    auto layout=new QVBoxLayout(&dialog);
-    auto explanation=new QLabel(tr("Move the slider until the subject you want at the stereo window has aligned red/cyan edges.\nThis shifts the starting eye images; it does not adjust the custom frame."),&dialog);
-    explanation->setWordWrap(true);layout->addWidget(explanation);
-    auto preview=new StereoWindowView(&dialog);preview->setObjectName("stereoWindowPreview");layout->addWidget(preview,1);
-    auto zoomRow=new QHBoxLayout;
-    for(const auto &entry:QList<QPair<QString,double>>{{tr("Zoom +"),1.25},{tr("Zoom −"),0.8},{tr("Fit (Command+0)"),0}}) {
-        auto button=new QPushButton(entry.first,&dialog);zoomRow->addWidget(button);
-        connect(button,&QPushButton::clicked,&dialog,[preview,factor=entry.second]{if(factor==0)preview->fitImage();else preview->zoomImage(factor);});
+
+    QDialog dialog(this);
+    dialog.setObjectName("stereoWindowDialog");
+    dialog.setWindowTitle(tr("Stereo Window — starting image depth"));
+    auto layout = new QVBoxLayout(&dialog);
+
+    auto explanation = new QLabel(
+        tr("Move the slider until red/cyan edges overlap at the depth you want for the stereo window.\n"
+           "Uncheck Anaglyph preview for a side-by-side comparison. This shifts the starting eye images; it does not adjust the custom frame."), &dialog);
+    explanation->setWordWrap(true);
+    layout->addWidget(explanation);
+
+    auto preview = new StereoWindowView(&dialog);
+    preview->setObjectName("stereoWindowPreview");
+    layout->addWidget(preview, 1);
+
+    auto zoomRow = new QHBoxLayout;
+    auto anaglyphPreview = new QCheckBox(tr("Anaglyph preview"), &dialog);
+    anaglyphPreview->setObjectName("stereoWindowAnaglyph");
+    anaglyphPreview->setChecked(true);
+    anaglyphPreview->setToolTip(tr("Switch between the main side-by-side layout and a red/cyan inspection view."));
+    zoomRow->addWidget(anaglyphPreview);
+    for (const auto &entry : QList<QPair<QString, double>>{
+             {tr("Zoom +"), 1.25}, {tr("Zoom −"), 0.8}, {tr("Fit (Command+0)"), 0.0}}) {
+        auto button = new QPushButton(entry.first, &dialog);
+        zoomRow->addWidget(button);
+        connect(button, &QPushButton::clicked, &dialog, [preview, factor = entry.second] {
+            if (factor == 0.0) preview->fitImage(); else preview->zoomImage(factor);
+        });
     }
-    auto panHint=new QLabel(tr("Scroll to zoom; drag the image to inspect another area."),&dialog);zoomRow->addWidget(panHint);zoomRow->addStretch();layout->addLayout(zoomRow);
-    for(const auto &entry:QList<QPair<QString,double>>{{"Ctrl++",1.25},{"Ctrl+=",1.25},{"Ctrl+-",0.8},{"Ctrl+0",0}}) {
-        auto shortcut=new QShortcut(QKeySequence(entry.first),&dialog);
-        connect(shortcut,&QShortcut::activated,&dialog,[preview,factor=entry.second]{if(factor==0)preview->fitImage();else preview->zoomImage(factor);});
+    auto panHint = new QLabel(tr("Scroll to zoom; drag the image to inspect another area."), &dialog);
+    zoomRow->addWidget(panHint);
+    zoomRow->addStretch();
+    layout->addLayout(zoomRow);
+
+    for (const auto &entry : QList<QPair<QString, double>>{
+             {"Ctrl++", 1.25}, {"Ctrl+=", 1.25}, {"Ctrl+-", 0.8}, {"Ctrl+0", 0.0}}) {
+        auto shortcut = new QShortcut(QKeySequence(entry.first), &dialog);
+        connect(shortcut, &QShortcut::activated, &dialog, [preview, factor = entry.second] {
+            if (factor == 0.0) preview->fitImage(); else preview->zoomImage(factor);
+        });
     }
-    auto row=new QHBoxLayout;
-    auto back=new QPushButton(tr("Push back"),&dialog);back->setObjectName("stereoWindowPushBack");row->addWidget(back);
-    auto slider=new QSlider(Qt::Horizontal,&dialog);slider->setObjectName("stereoWindowSlider");
-    const int limit=qMax(1,m_viewWidget->leftImage().width()/2);slider->setRange(-limit,limit);slider->setValue(m_viewWidget->stereoWindowOffset());row->addWidget(slider);
-    auto forward=new QPushButton(tr("Pull forward"),&dialog);forward->setObjectName("stereoWindowPullForward");row->addWidget(forward);
-    auto amount=new QSpinBox(&dialog);amount->setObjectName("stereoWindowPixels");amount->setRange(-limit,limit);amount->setValue(slider->value());amount->setSuffix(tr(" px"));row->addWidget(amount);
-    amount->setMinimumHeight(44);amount->setMinimumWidth(140);
-    amount->setStyleSheet("QSpinBox {padding-right: 36px;} QSpinBox::up-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:top right;} QSpinBox::down-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:bottom right;}");
-    back->setMinimumHeight(44);forward->setMinimumHeight(44);
-    auto step=[slider,amount](int direction){amount->interpretText();slider->setValue(slider->value()+direction);};
-    connect(back,&QPushButton::clicked,&dialog,[step]{step(-1);});
-    connect(forward,&QPushButton::clicked,&dialog,[step]{step(1);});
-    auto leftKey=new QShortcut(QKeySequence(Qt::Key_Left),&dialog);
-    auto rightKey=new QShortcut(QKeySequence(Qt::Key_Right),&dialog);
-    leftKey->setContext(Qt::WidgetWithChildrenShortcut);rightKey->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(leftKey,&QShortcut::activated,&dialog,[step]{step(-1);});connect(rightKey,&QShortcut::activated,&dialog,[step]{step(1);});
-    auto reset=new QPushButton(tr("Reset to original"),&dialog);row->addWidget(reset);layout->addLayout(row);
-    auto updatePreview=[&]{preview->setImage(m_viewWidget->stereoWindowPreview(slider->value()));};
-    connect(slider,&QSlider::valueChanged,amount,&QSpinBox::setValue);
-    connect(amount,QOverload<int>::of(&QSpinBox::valueChanged),slider,&QSlider::setValue);
-    connect(slider,&QSlider::valueChanged,&dialog,[&]{updatePreview();});
-    connect(reset,&QPushButton::clicked,&dialog,[&]{slider->setValue(0);});
-    auto note=new QLabel(tr("Use this before framing and tracing. Existing frame points and selections stay in place.\nThe canvas size stays unchanged; shifting can expose empty side strips. Your original file stays untouched.\nApply stores the adjustment in the project; Save keeps it and Export uses the shifted pair."),&dialog);note->setWordWrap(true);layout->addWidget(note);
-    auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
-    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+
+    auto row = new QHBoxLayout;
+    auto back = new QPushButton(tr("Push back"), &dialog);
+    back->setObjectName("stereoWindowPushBack");
+    row->addWidget(back);
+
+    auto slider = new QSlider(Qt::Horizontal, &dialog);
+    slider->setObjectName("stereoWindowSlider");
+    const int limit = qMax(1, m_viewWidget->leftImage().width() / 2);
+    slider->setRange(-limit, limit);
+    slider->setValue(m_viewWidget->stereoWindowOffset());
+    row->addWidget(slider);
+
+    auto forward = new QPushButton(tr("Pull forward"), &dialog);
+    forward->setObjectName("stereoWindowPullForward");
+    row->addWidget(forward);
+
+    auto amount = new QSpinBox(&dialog);
+    amount->setObjectName("stereoWindowPixels");
+    amount->setRange(-limit, limit);
+    amount->setValue(slider->value());
+    amount->setSuffix(tr(" px"));
+    amount->setMinimumHeight(44);
+    amount->setMinimumWidth(140);
+    amount->setStyleSheet("QSpinBox {padding-right: 36px;} "
+                          "QSpinBox::up-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:top right;} "
+                          "QSpinBox::down-button {width:32px; height:22px; subcontrol-origin:border; subcontrol-position:bottom right;}");
+    row->addWidget(amount);
+    back->setMinimumHeight(44);
+    forward->setMinimumHeight(44);
+
+    auto step = [slider, amount](int direction) {
+        amount->interpretText();
+        slider->setValue(slider->value() + direction);
+    };
+    connect(back, &QPushButton::clicked, &dialog, [step] { step(-1); });
+    connect(forward, &QPushButton::clicked, &dialog, [step] { step(1); });
+
+    auto reset = new QPushButton(tr("Reset to original"), &dialog);
+    row->addWidget(reset);
+    layout->addLayout(row);
+
+    auto updatePreview = [&] { preview->setImage(m_viewWidget->stereoWindowPreview(slider->value(), anaglyphPreview->isChecked())); };
+    connect(slider, &QSlider::valueChanged, amount, &QSpinBox::setValue);
+    connect(amount, QOverload<int>::of(&QSpinBox::valueChanged), slider, &QSlider::setValue);
+    connect(slider, &QSlider::valueChanged, &dialog, [&](int) { updatePreview(); });
+    connect(anaglyphPreview, &QCheckBox::toggled, &dialog, [&](bool) { updatePreview(); });
+    connect(reset, &QPushButton::clicked, &dialog, [&] { slider->setValue(0); });
+
+    auto note = new QLabel(
+        tr("Use this before framing and tracing. Existing frame points and selections stay in place.\n"
+           "The canvas size stays unchanged; shifting can expose transparent side strips. Your original file stays untouched.\n"
+           "Apply stores the adjustment in the project; Save keeps it and Export uses the shifted pair."), &dialog);
+    note->setWordWrap(true);
+    layout->addWidget(note);
+
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
     class HorizontalKeys : public QObject {
-        std::function<void(int)> change;
+        std::function<void(int)> m_change;
     public:
-        HorizontalKeys(QObject *parent,std::function<void(int)> callback):QObject(parent),change(callback) {}
-        bool eventFilter(QObject *,QEvent *event) override {
-            if (event->type()!=QEvent::ShortcutOverride && event->type()!=QEvent::KeyPress) return false;
-            auto key=static_cast<QKeyEvent *>(event);
-            if (key->modifiers()!=Qt::NoModifier || (key->key()!=Qt::Key_Left && key->key()!=Qt::Key_Right)) return false;
-            if (event->type()==QEvent::KeyPress) change(key->key()==Qt::Key_Left ? -1 : 1);
-            event->accept();return true;
+        HorizontalKeys(QObject *parent, std::function<void(int)> callback)
+            : QObject(parent), m_change(std::move(callback)) {}
+        bool eventFilter(QObject *, QEvent *event) override
+        {
+            if (event->type() != QEvent::ShortcutOverride && event->type() != QEvent::KeyPress) return false;
+            auto key = static_cast<QKeyEvent *>(event);
+            if (key->modifiers() != Qt::NoModifier ||
+                (key->key() != Qt::Key_Left && key->key() != Qt::Key_Right)) return false;
+            if (event->type() == QEvent::KeyPress) m_change(key->key() == Qt::Key_Left ? -1 : 1);
+            event->accept();
+            return true;
         }
     };
-    auto horizontalKeys=new HorizontalKeys(&dialog,step);
-    for (auto child:dialog.findChildren<QWidget *>()) child->installEventFilter(horizontalKeys);
+    auto horizontalKeys = new HorizontalKeys(&dialog, step);
+    for (auto child : dialog.findChildren<QWidget *>()) child->installEventFilter(horizontalKeys);
     dialog.installEventFilter(horizontalKeys);
+
     updatePreview();
     dialog.showMaximized();
-    if (dialog.exec()==QDialog::Accepted) {
+    if (dialog.exec() == QDialog::Accepted) {
         m_viewWidget->setStereoWindowOffset(slider->value());
-        statusBar()->showMessage(tr("Stereo window adjusted. Save your project to retain it; Undo restores the previous depth."),6000);
+        statusBar()->showMessage(
+            tr("Stereo window adjusted. Save your project to retain it; Undo restores the previous depth."), 6000);
     }
 }
 

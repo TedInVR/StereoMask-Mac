@@ -1,4 +1,4 @@
-StereoMask Mac R18 / 2.1.8
+StereoMask Mac R19 / 2.3.0
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -32,3 +32,8 @@ Create Frame > Shapes: choose, drag, resize and apply an editable frame.
 Edit Frame > Picture Frame: optional Drop Shadow controls.
 Text & Bubbles: fonts, stereo depth, speech/thought bubbles and draggable tails.
 All save in projects. Older versions ignore text/shadow additions; keep copies.
+
+R19 integrates Windows v2.3.0: Fuzzy/Color selection with tolerance, text relief
+and cutout plates, stereo X/Y/Z tilt, alignment/point-order fixes, processing
+feedback and text caches. Anaglyph and scroll-to-zoom remain Mac defaults.
+View > Scroll to Pan While Editing is optional. User Guide explains the tools.
