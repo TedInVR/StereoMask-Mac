@@ -6,7 +6,17 @@ StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theod
 - **Theodore Whitten:** Mac port, editing workflow and foreground-selection improvements, developed with Codex assistance.
 - **Upstream:** [SRathinaGiri/StereoMask](https://github.com/SRathinaGiri/StereoMask).
 
-The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.3.0 incorporates the Mac workflow and creative tools plus new Windows enhancements. Mac R19 / 2.3.0 brings the new color selection, text effects, geometry fixes and processing feedback back to Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.3.0 incorporates the Mac workflow and creative tools plus new Windows enhancements. Mac R20 / 2.3.1 brings the new color selection, text effects, geometry fixes and processing feedback back to Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+
+## Voluntary support
+
+Help → Support StereoMask opens an optional nonmodal panel, also available through in-window Help and Main Menu → Help. Its exact public links support Ted in VR's Mac development and other creative projects:
+
+- [Ko-fi — Leave a Tip](https://ko-fi.com/tedwhitten)
+- [PayPal — Make a Donation](https://paypal.me/theodorewhitten1)
+- [Patreon — Become a Supporter](https://patreon.com/TedWhitten)
+
+No embedded payments, startup requests, ads, editing interruptions or paid app features. Links open only after user activation. Payment/payout processing and Patreon membership availability have not been tested. Subbiah's original authorship and collaborative credit remain unchanged.
 
 ## Features
 

@@ -164,3 +164,11 @@ As with items 1–15, explain each follow-up to Subbiah and obtain his individua
 These three items require separate decisions from Subbiah before Windows implementation. Explain behavior, dependencies and alternatives individually. Shape creation does not require text or shadow. Shadow reuses the existing picture-frame compositor; text uses the shared per-eye export pipeline but can be ported without the shape dialog. Adapt Command/Option labels and shortcut mapping for Windows. Earlier versions ignore new fields and may discard them when saving, so use copies for project exchange.
 
 Verification includes tests/creative_test.cpp (geometry, curve alpha parity, shadow transparency/depth/cache, bubble opacity/occlusion, project/export and undo) and tests/help_test.cpp (actual dialogs, drag interaction and Apply/Cancel). Mac-specific packaging and physical keyboard behavior still require Mac confirmation; Windows ports need independent native testing.
+
+## R20 follow-up (2026-10-18): optional support panel
+
+Mac R20 / 2.3.1 adds native Help, in-window Help and Main Menu → Help → Support StereoMask. Source: supportdialog.h plus MainWindow::showSupport and supportStereoMaskAction. A retained, nonmodal Qt window launches three exact public URLs only on button activation; no startup prompts, SDK, checkout, payment credentials or feature restrictions. Close/Escape/Command-W/window close hide it safely for reuse.
+
+These particular accounts support **Ted in VR**: Ko-fi https://ko-fi.com/tedwhitten; PayPal https://paypal.me/theodorewhitten1; Patreon https://patreon.com/TedWhitten. Panel text preserves Subbiah's authorship and collaboration credit, and does not imply these are joint donation accounts. Ko-fi/PayPal are one-time choices; Patreon offers ongoing support through whatever options its public page currently exposes. No payment/payout or published paid-tier validation is claimed.
+
+As before, explain this item to Subbiah before implementing anything in Windows. He can Adopt, Adapt, Defer or Decline independently; explicitly let him decide whether Windows should have support links and whose accounts it should use. Do not silently copy Ted's payment destinations into the Windows version. Adapt Command/Control wording and normal Windows dismissal conventions if approved. No Windows source was modified.

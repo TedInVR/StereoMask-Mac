@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QList>
+#include <QPointer>
 #include <memory>
 
 class StereoViewWidget;
@@ -14,6 +15,7 @@ class QSpinBox;
 class QAction;
 class UpdateChecker;
 class OperationProgress;
+class SupportDialog;
 template <typename T> class QFutureWatcher;
 
 struct AppSettings {
@@ -68,6 +70,7 @@ private slots:
     void showHelp();
     void checkForUpdates();
     void showAbout();
+    void showSupport();
     void openRecentFile();
 
 private:
@@ -77,6 +80,7 @@ private:
     void updateRecentFileActions();
 
     StereoViewWidget *m_viewWidget;
+    QPointer<SupportDialog> m_supportDialog;
     AppSettings m_settings;
     QMenu *m_recentFilesMenu;
     QAction *m_recentFileActions[5];

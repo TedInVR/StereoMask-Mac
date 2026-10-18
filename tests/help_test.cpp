@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include "stereowindowview.h"
 #include "operationprogress.h"
+#include "supportdialog.h"
 #include <QThread>
 #include <QStatusBar>
 #include <QSlider>
@@ -41,8 +42,9 @@ class BrowserCapture : public QObject {
     Q_OBJECT
 public:
     QUrl url;
+    int opens=0;
 public slots:
-    void open(const QUrl &value) { url = value; }
+    void open(const QUrl &value) { url = value;++opens; }
 };
 
 int main(int argc, char **argv) {
@@ -416,6 +418,23 @@ int main(int argc, char **argv) {
     if(!effectsWired || !textApplyFeedback || view->textObjects().isEmpty())return 62;
     const auto appliedText=view->textObjects().last();
     if(appliedText.relief!=1 || appliedText.surface!=1 || appliedText.reliefSize!=5 || appliedText.tiltX!=20 || appliedText.tiltY!=-30 || appliedText.tiltZ!=12)return 62;
+    {
+        auto action=window.findChild<QAction *>("supportStereoMaskAction");auto helpControls=window.findChild<QToolBar *>("controlSection6");auto helpMenu=window.findChild<QMenu *>("mainSectionMenu6");
+        if(!action || !helpControls->actions().contains(action) || !helpMenu->actions().contains(action))return 95;
+        QDesktopServices::setUrlHandler("https",&browser,"open");const int before=browser.opens;
+        action->trigger();auto panel=window.findChild<SupportDialog *>("supportStereoMaskDialog");
+        if(!panel || !panel->isVisible() || panel->isModal() || browser.opens!=before)return 96;
+        const QList<QPair<QString,QString>> links={{"supportKofi","https://ko-fi.com/tedwhitten"},{"supportPaypal","https://paypal.me/theodorewhitten1"},{"supportPatreon","https://patreon.com/TedWhitten"}};
+        for(const auto &link:links){auto button=panel->findChild<QPushButton *>(link.first);if(!button || button->accessibleName().isEmpty())return 97;const int count=browser.opens;button->click();if(browser.url!=QUrl(link.second) || browser.opens!=count+1)return 98;}
+        panel->grab().save("support-stereomask.png");
+        auto close=panel->findChild<QDialogButtonBox *>();close->button(QDialogButtonBox::Close)->click();if(panel->isVisible())return 99;
+        action->trigger();if(window.findChild<SupportDialog *>("supportStereoMaskDialog")!=panel)return 100;
+        QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier);QApplication::sendEvent(panel,&escape);if(panel->isVisible())return 101;
+        action->trigger();QKeyEvent commandW(QEvent::KeyPress,Qt::Key_W,Qt::ControlModifier);QApplication::sendEvent(panel,&commandW);if(panel->isVisible())return 102;
+        action->trigger();panel->close();if(panel->isVisible())return 103;action->trigger();if(window.findChild<SupportDialog *>("supportStereoMaskDialog")!=panel)return 104;panel->close();
+        QDesktopServices::unsetUrlHandler("https");
+        std::cout<<"Support links: exact URLs, no opening request, nonmodal reuse, accessibility, Close/Escape/Command-W/window-close: PASS\n";
+    }
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

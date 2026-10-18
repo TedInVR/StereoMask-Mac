@@ -1,6 +1,6 @@
 {
-  "version": "2.3.0",
+  "version": "2.3.1",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R19 integrates Subbiah\u2019s Windows v2.3.0: Fuzzy/Color selection, text emboss/engrave/cutout and stereo tilt, frame alignment/order fixes, processing feedback and cached text rendering. Mac controls and updater retained. Source download; build on your Mac."
+  "notes": "Mac R20 adds optional Help → Support StereoMask with Ko-fi, PayPal and Patreon browser links for Ted in VR. All features remain free; no startup prompts or embedded payments. Updated User Guide. Source download; build on your Mac."
 }

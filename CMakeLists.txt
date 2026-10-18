@@ -41,6 +41,7 @@ add_executable(StereoMask
     updatechecker.cpp
     updatechecker.h
     appversion.h
+    supportdialog.h
     operationprogress.h
     smartselection.cpp
     smartselection.h

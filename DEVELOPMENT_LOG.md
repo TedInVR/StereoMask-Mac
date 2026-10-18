@@ -443,3 +443,13 @@ Second native full build and selection, creative, help/UI and updater suites pas
 Updated embedded User Guide, README, start instructions and source update manifest; retained upstream handoff snapshot and added docs/mac-r19-integration-notes.md plus pointer in the outgoing handoff. No changes made to Subbiah's Windows repository.
 
 Final R19 result: native full build and all four C++ suites passed after final guide/trackpad/preview changes; all 16 Python packaging/install tests, both shell syntax checks and git diff whitespace checks passed. Reviewed text-effects and processing-panel screenshots. Published source only; Mac installation uses the existing permanent updater command.
+
+## 2026-10-18 — Mac R20 / 2.3.1 — voluntary support panel
+
+User provided Stereo_Mask_Support_Handoff(1).md from Inject Z and authorized the same public support links for StereoMask Mac. Copied R19 to a separate R20 working tree before modification. Added supportdialog.h using existing Qt Widgets/DesktopServices only, and a retained QPointer-owned nonmodal dialog through MainWindow::showSupport. Native Help, in-window Help and Main Menu → Help share the same QAction.
+
+Exact links: https://ko-fi.com/tedwhitten, https://paypal.me/theodorewhitten1, https://patreon.com/TedWhitten. No browser opening during panel construction/show, only button activation; no payment SDK, credentials, embedded checkout or user settings. Panel spells out collaborative authorship and identifies Ted in VR as recipient of these contributions. No PayPal email, pricing, membership-tier promises or tested-payout claims. No startup wiring or feature gates. Close/Escape/window close/Command-W hide and retain the panel; browser launch failures show the public URL.
+
+Version updated centrally to 2.3.1 (Mac R20) so existing version-based checks detect the source update. Embedded guide, README, start instructions and outgoing handoff updated. Existing macOS identifier, signing/dependency/install scripts and Mac updater remain intact; no Inject Z installer/signing patches imported. GitHub source publication does not replace any existing prebuilt release asset. Mac packaging/native interaction cannot be certified by Linux verification.
+
+R20 verification: full application compilation, existing help/UI integration suite with new exact-URL/nonmodal/reuse/keyboard/window-close assertions, and updater suite passed on Linux Qt/OpenCV. HTTPS actions were captured locally; no real payment pages or transactions were opened. All 16 Python packaging/install tests, shell syntax and whitespace checks passed. Reviewed the support-panel screenshot and sized wrapped copy to avoid clipping. Mac-specific appearance, physical Command-W delivery and packaging still require user-Mac confirmation.

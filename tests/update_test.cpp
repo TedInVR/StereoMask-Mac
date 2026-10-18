@@ -59,8 +59,8 @@ int main(int argc,char **argv) {
     require(!UpdateChecker::parse(notice("2.0.11","https://github.com/TedInVR/StereoMask-Mac-evil"),info,error),"Wrong repository accepted");
     require(!UpdateChecker::parse(notice("2.0.11","http://github.com/TedInVR/StereoMask-Mac"),info,error),"Insecure URL accepted");
     require(!UpdateChecker::parse(notice("nonsense"),info,error),"Invalid manifest version accepted");
-    httpCheck(notice("2.3.1"),200,true,false);
-    httpCheck(notice("2.3.0"),200,false,false);
+    httpCheck(notice("2.3.2"),200,true,false);
+    httpCheck(notice("2.3.1"),200,false,false);
     httpCheck(notice("2.0.9"),200,false,false);
     httpCheck("not JSON",200,false,true);
     httpCheck("{}",404,false,true);

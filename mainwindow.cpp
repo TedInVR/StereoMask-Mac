@@ -2,6 +2,7 @@
 #include "stereowindowview.h"
 #include "updatechecker.h"
 #include "appversion.h"
+#include "supportdialog.h"
 #include "operationprogress.h"
 #include <QShortcut>
 #include <QKeyEvent>
@@ -163,7 +164,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R19 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R20 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -291,6 +292,7 @@ void MainWindow::createMenus()
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("User Guide…"), this, &MainWindow::showHelp);
     auto keys=helpMenu->addAction(tr("Keyboard Shortcuts…"),this,&MainWindow::showKeyboardShortcuts);keys->setObjectName("keyboardShortcutsAction");
+    auto support=helpMenu->addAction(tr("Support StereoMask…"),this,&MainWindow::showSupport);support->setObjectName("supportStereoMaskAction");
     m_checkUpdatesAction = helpMenu->addAction(tr("Check for Updates…"), this, &MainWindow::checkForUpdates);
     helpMenu->addAction(tr("About StereoMask"), this, &MainWindow::showAbout);
 }
@@ -1075,7 +1077,7 @@ void MainWindow::createToolbar()
     auto createPoints=createBar->addAction(tr("Create with points"));createPoints->setObjectName("createFramePointsAction");connect(createPoints,&QAction::triggered,this,enterFrame);
     auto shapes=createBar->addAction(tr("Shapes…"));shapes->setObjectName("frameShapesAction");connect(shapes,&QAction::triggered,this,&MainWindow::createFrameShape);
     createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
-    addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction")});
+    addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction"),findChild<QAction *>("supportStereoMaskAction")});
     auto wheelPan=navigationBar->addAction(tr("Scroll to Pan While Editing"));wheelPan->setObjectName("editingWheelPanAction");wheelPan->setCheckable(true);
     wheelPan->setToolTip(tr("Optional: while editing frame dots or lassos, scroll pans vertically, Shift+scroll pans horizontally, Command+scroll zooms. Off keeps ordinary scroll zoom. Middle-drag always pans."));
     {QSettings prefs;wheelPan->setChecked(prefs.value("navigation/editingWheelPan",false).toBool());m_viewWidget->setEditingWheelPan(wheelPan->isChecked());}
@@ -1249,7 +1251,7 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r19";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r20";
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1273,10 +1275,16 @@ void MainWindow::checkForUpdates()
     m_updateChecker->check();
 }
 
+void MainWindow::showSupport()
+{
+    if(!m_supportDialog)m_supportDialog=new SupportDialog(this);
+    m_supportDialog->show();m_supportDialog->raise();m_supportDialog->activateWindow();
+}
+
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R19 (%1)</h2>"
+        tr("<h2>StereoMask Mac R20 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "

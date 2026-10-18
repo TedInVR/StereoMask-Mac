@@ -1,4 +1,4 @@
-StereoMask Mac R19 / 2.3.0
+StereoMask Mac R20 / 2.3.1
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -37,3 +37,7 @@ R19 integrates Windows v2.3.0: Fuzzy/Color selection with tolerance, text relief
 and cutout plates, stereo X/Y/Z tilt, alignment/point-order fixes, processing
 feedback and text caches. Anaglyph and scroll-to-zoom remain Mac defaults.
 View > Scroll to Pan While Editing is optional. User Guide explains the tools.
+
+R20: Help > Support StereoMask has optional Ko-fi, PayPal and Patreon browser
+links supporting Ted in VR. Available from native/in-window Help and Main Menu.
+All features stay free; no startup requests. Close, Escape or Command+W dismisses.
