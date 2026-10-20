@@ -53,6 +53,8 @@ private slots:
     void setupKeyboardShortcuts();
     void startGuidedProcess();
     void adjustPictureFrame();
+    void adjustOutlineFrame();
+    void adjustGrid();
     void createFrameShape();
     void editStereoText();
     void adjustStereoWindow();
@@ -74,6 +76,8 @@ private slots:
     void openRecentFile();
 
 private:
+    void closeEvent(QCloseEvent *event) override;
+    bool m_restoringToolbox = true;
     void createMenus();
     void createToolbar();
     void setupConnections();

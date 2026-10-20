@@ -1,4 +1,9 @@
 #include "mainwindow.h"
+#include "appversion.h"
+#include "operationprogress.h"
+#include "quickaccess.h"
+#include <QThread>
+#include <QProgressBar>
 #include "stereoviewwidget.h"
 #include <QApplication>
 #include <QComboBox>
@@ -36,6 +41,10 @@
 #include <QDockWidget>
 #include <QSettings>
 #include <QCheckBox>
+#include <QScrollArea>
+#include <QSettings>
+#include <QDir>
+#include <QPointer>
 #include <iostream>
 
 class BrowserCapture : public QObject {
@@ -85,6 +94,21 @@ int main(int argc, char **argv) {
         host.close();
     }
     {
+        auto host=std::make_unique<QMainWindow>();host->resize(640,400);host->show();app.processEvents();
+        bool queuedCommand=false;
+        QTimer::singleShot(0,host.get(),[&]{queuedCommand=true;});
+        QApplication::setOverrideCursor(Qt::CrossCursor);
+        auto progress=std::make_unique<OperationProgress>(host.get(),"Safety test","Saving project...");
+        if(queuedCommand){std::cerr<<"Processing-panel construction reentered queued commands\n";return 66;}
+        QPointer<QDialog> panel=host->findChild<QDialog *>("operationProgress");
+        if(!panel)return 66;
+        host.reset();
+        if(panel){std::cerr<<"Processing panel outlived its Qt parent\n";return 66;}
+        progress->setStage("Host already closed");progress.reset();
+        if(!QApplication::overrideCursor() || QApplication::overrideCursor()->shape()!=Qt::CrossCursor)return 66;
+        QApplication::restoreOverrideCursor();
+    }
+    {
         QTemporaryDir openingTemp;
         QImage image(480,180,QImage::Format_RGB32);image.fill(Qt::green);
         const QString path=openingTemp.path()+"/opening.png";
@@ -115,6 +139,18 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R21 (%1)").arg(STEREOMASK_VERSION))return 67;
+    {
+        QEventLoop wait;
+        QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
+        bool currentSplash=false;
+        for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
+            auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R21 (%1)</h1>").arg(STEREOMASK_VERSION));
+            topLevel->close();
+        }
+        if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
+    }
     QAction *guide = nullptr;
     bool updates = false;
     for (QAction *menuAction : window.menuBar()->actions()) {
@@ -131,6 +167,10 @@ int main(int argc, char **argv) {
     if (!browser.url.isLocalFile() || !file.open(QIODevice::ReadOnly) || !bundled.open(QIODevice::ReadOnly)) return 2;
     const QByteArray html = file.readAll();
     if (!html.contains("First optional step") || !html.contains("Reset to original")) return 34;
+    if(!html.contains(QByteArray("M A C &middot; ")+STEREOMASK_VERSION) || html.contains("<!--STEREOMASK_VERSION-->")
+        || !browser.url.toLocalFile().contains(QStringLiteral("/help/%1/").arg(STEREOMASK_VERSION))) {
+        std::cerr<<"Help content/cache does not use the application version\n";return 67;
+    }
     if (html != bundled.readAll() || !html.contains("Subbiah Rathinagiri") || !html.contains("Select Brush") || !html.contains("Tutorial 2")) return 3;
     for (const QByteArray &feature: {QByteArray("Smart polygon lasso"),QByteArray("Paired polygon selections"),QByteArray("History"),QByteArray("Command + Enter"),QByteArray("Command-click lasso anchor"),QByteArray("Shift-click lasso edge"),QByteArray("F8"),QByteArray("Match preview"),QByteArray("Padding/gap color"),QByteArray("QTAGENT Rect Decompose"),QByteArray("Bernd Paksa")})
         if (!html.contains(feature)) {std::cerr<<"Guide lacks current feature: "<<feature.constData()<<'\n';return 3;}
@@ -185,20 +225,76 @@ int main(int argc, char **argv) {
     if (!credited) { std::cerr << "Original creator attribution or clickable link missing\n"; return 7; }
     auto compact=window.findChild<QToolBar *>("compactControls");
     auto history=window.findChild<QDockWidget *>("selectionObjectsDock");
-    if (!compact || !history || history->windowTitle()!=QString("History")) return 40;
-    for(int i=0;i<7;++i) {auto toggle=window.findChild<QAction *>(QString("sectionToggle%1").arg(i));if(!toggle)return 41;toggle->setChecked(false);}
+    auto guided=window.findChild<QAction *>("guidedProcessAction");
+    auto keys=window.findChild<QAction *>("keyboardShortcutsAction");
+    if (!compact || !history || history->windowTitle()!="History" || !guided || !keys) return 40;
+    for (int i : {0,1,3,4,5,6}) {auto toggle=window.findChild<QAction *>(QString("sectionToggle%1").arg(i));if(!toggle || toggle->icon().isNull())return 41;}
+    auto stereoWindow=window.findChild<QAction *>("stereoWindowAction");
+    if(!stereoWindow || !compact->actions().contains(stereoWindow) || stereoWindow->isCheckable() || window.findChild<QDockWidget *>("controlDrawer2"))return 41;
+    if(compact->actions().last()!=window.findChild<QAction *>("sectionToggle6") || compact->actions().indexOf(guided)!=compact->actions().size()-2)return 41;
     window.resize(1280, 900);
     window.show();
     QApplication::processEvents();
-    if (!compact->isVisible()) return 42;
-    for(int i=0;i<7;++i) {auto section=window.findChild<QToolBar *>(QString("controlSection%1").arg(i));if(!section || section->isVisible())return 43;}
-    auto first=window.findChild<QAction *>("sectionToggle0");first->setChecked(true);
-    if (!window.findChild<QToolBar *>("controlSection0")->isVisible() || window.findChild<QToolBar *>("controlSection1")->isVisible())return 44;
-    first->setChecked(false);history->toggleViewAction()->trigger();if(!history->isVisible())return 45;history->toggleViewAction()->trigger();
-    window.grab().save("compact-controls.png");
+    for(auto drawer:window.findChildren<QDockWidget *>()) {
+        if(drawer->isVisible() != (drawer->objectName()=="controlDrawer0")) {
+            std::cerr<<"Startup must show File only: "<<drawer->objectName().toStdString()<<'\n';return 69;
+        }
+    }
+    window.grab().save("mac-r21-startup.png");
+    history->show();
+    QApplication::processEvents();
+    if(history->width()!=240){std::cerr<<"History must use its compact 240-pixel width\n";return 63;}
     auto list=window.findChild<QTreeWidget *>("selectionObjectsList");
     auto view=qobject_cast<StereoViewWidget *>(window.centralWidget());
     if (!list || !view) return 8;
+    auto createDrawer=window.findChild<QDockWidget *>("controlDrawer3");
+    auto selectionDrawer=window.findChild<QDockWidget *>("controlDrawer5");
+    auto createToggle=window.findChild<QAction *>("sectionToggle3");
+    auto selectionToggle=window.findChild<QAction *>("sectionToggle5");
+    auto quickToggle=window.findChild<QAction *>("quickAccessToggleAction");
+    auto quickDrawer=window.findChild<QDockWidget *>("quickAccessDock");
+    auto quickAccess=window.findChild<QuickAccess *>("quickAccessPanel");
+    if(!quickToggle || !quickDrawer || !quickAccess || !compact->actions().contains(quickToggle))return 65;
+    quickToggle->trigger();QApplication::processEvents();
+    if(!quickDrawer->isVisible() || history->isVisible() || quickDrawer->width()!=190)return 65;
+    auto collapse=window.findChild<QAction *>("collapseToolboxAction");
+    auto resetLayout=window.findChild<QAction *>("resetToolboxLayoutAction");
+    if(!createDrawer || !selectionDrawer || !collapse || !resetLayout || window.toolBarArea(compact)!=Qt::LeftToolBarArea || compact->width()>64){std::cerr<<"Toolbox rail/controls missing or too wide: "<<compact->width()<<'\n';return 63;}
+    createToggle->setChecked(true);QApplication::processEvents();
+    if(!createDrawer->isVisible() || history->isVisible() || window.dockWidgetArea(createDrawer)!=Qt::LeftDockWidgetArea){std::cerr<<"Drawer activation did not replace History\n";return 63;}
+    const int openCanvasWidth=view->width();
+    createToggle->trigger();QApplication::processEvents();
+    if(createDrawer->isVisible() || view->width()<openCanvasWidth+190){std::cerr<<"Closing drawer did not reclaim canvas\n";return 63;}
+    selectionToggle->trigger();QApplication::processEvents();
+    if(!selectionDrawer->isVisible() || createDrawer->isVisible() || !selectionDrawer->findChild<QScrollArea *>()){std::cerr<<"Selection drawer did not open\n";return 63;}
+    if(quickDrawer->isVisible())return 65;
+    auto selectionScroll=selectionDrawer->findChild<QScrollArea *>();
+    for(auto combo:selectionDrawer->findChildren<QComboBox *>()) {
+        const int right=combo->mapTo(selectionScroll->viewport(),QPoint(combo->width(),0)).x();
+        if(right>selectionScroll->viewport()->width() || right<selectionScroll->viewport()->width()-10){std::cerr<<"Dropdown must fill usable drawer width: "<<right<<" of "<<selectionScroll->viewport()->width()<<'\n';return 65;}
+    }
+    window.findChild<QAction *>("sectionToggle0")->setChecked(true);QApplication::processEvents();
+    auto fileDrawer=window.findChild<QDockWidget *>("controlDrawer0");auto fileScroll=fileDrawer->findChild<QScrollArea *>();
+    auto recentAction=window.findChild<QMenu *>("openRecentMenu")->menuAction();
+    auto recentButton=qobject_cast<QToolButton *>(window.findChild<QToolBar *>("controlSection0")->widgetForAction(recentAction));
+    if(!recentButton || recentButton->mapTo(fileScroll->viewport(),QPoint(recentButton->width(),0)).x()<fileScroll->viewport()->width()-10)return 65;
+    selectionToggle->setChecked(true);QApplication::processEvents();
+    selectionDrawer->setFloating(true);history->show();QApplication::processEvents();
+    if(!selectionDrawer->isVisible() || !history->isVisible()){std::cerr<<"Floating drawer was hidden by History\n";return 63;}
+    selectionDrawer->setFloating(false);QApplication::processEvents();
+    if(history->isVisible()){std::cerr<<"Redocking did not replace History\n";return 63;}
+    resetLayout->trigger();QApplication::processEvents();
+    if(!fileDrawer->isVisible() || fileDrawer->isFloating() || selectionDrawer->isVisible()){std::cerr<<"Reset toolbox did not restore default drawer\n";return 63;}
+    if(view->mapTo(&window,QPoint()).y()>window.menuBar()->height()+12){std::cerr<<"Top toolbar rows still occupy canvas\n";return 63;}
+    window.findChild<QAction *>("sectionToggle4")->setChecked(true);QApplication::processEvents();
+    auto editDrawer=window.findChild<QDockWidget *>("controlDrawer4");
+    for(auto drawer:window.findChildren<QDockWidget *>())if(drawer->objectName().startsWith("controlDrawer") && drawer->width()!=190){std::cerr<<"Command drawer must be 190 pixels wide\n";return 64;}
+    for(auto spin:editDrawer->findChildren<QSpinBox *>())if(spin->width()>190)return 64;
+    for(auto bar:editDrawer->findChildren<QToolBar *>())for(auto action:bar->actions()) {
+        if(auto button=qobject_cast<QToolButton *>(bar->widgetForAction(action)))
+            if(button->isVisible() && (button->width()>190 || button->x()>8)){std::cerr<<"Drawer buttons must be left aligned and at most 190 pixels wide: "<<button->x()<<","<<button->width()<<'\n';return 64;}
+    }
+    if(!window.grab().save("mac-toolbox-buttons-ui.png"))return 64;
     QTemporaryDir selectionFixture;
     QImage pair(480,180,QImage::Format_RGB32); pair.fill(QColor(85,130,160));
     {QPainter p(&pair); p.fillRect(QRect(90,20,60,140),QColor(220,170,90));p.fillRect(QRect(330,20,60,140),QColor(220,170,90));}
@@ -211,7 +307,7 @@ int main(int argc, char **argv) {
     auto fileControls=window.findChild<QToolBar *>("controlSection0");
     auto editControls=window.findChild<QToolBar *>("controlSection2");
     const QStringList headings={"File","View","Stereo Window","Create Frame","Edit Frame","Out-of-Frame","Help"};
-    for(int i=0;i<headings.size();++i)if(window.findChild<QAction *>(QString("sectionToggle%1").arg(i))->text()!=headings[i])return 47;
+    for(int i : {0,1,3,4,5,6})if(window.findChild<QAction *>(QString("sectionToggle%1").arg(i))->text()!=headings[i])return 47;
     if(fileControls->actions().size()!=6)return 48;
     auto outTools=window.findChild<QComboBox *>("outOfFrameToolCombo");if(!outTools || outTools->findData(0)>=0)return 49;
     if(!window.findChild<QSpinBox *>("framePointDepth"))return 50;
@@ -289,7 +385,7 @@ int main(int argc, char **argv) {
     // Sampling changes mask appearance, not cutout color or export mode.
     const QColor previousCutoutColor=view->cutoutColor();const int previousExportMode=view->cutoutBackground();
     picker->trigger();
-    const QPoint samplePoint(100,200);
+    const QPoint samplePoint(view->width()/4,view->height()/2);
     QMouseEvent samplePress(QEvent::MouseButtonPress,QPointF(samplePoint),QPointF(samplePoint),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
     QMouseEvent sampleRelease(QEvent::MouseButtonRelease,QPointF(samplePoint),QPointF(samplePoint),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
     QApplication::sendEvent(view,&samplePress);QApplication::sendEvent(view,&sampleRelease);
@@ -303,6 +399,7 @@ int main(int argc, char **argv) {
     object.anchors={{95,100},{145,100},{145,155},{95,155}}; object.magnetic.resize(3);
     object.path.addPolygon(QPolygonF(object.anchors)); object.path.closeSubpath();
     SelectionState state; state.objects.append(object); view->restoreSelectionState(state);
+    history->show();QApplication::processEvents();
     if (list->topLevelItemCount()!=1) return 11;
     auto item=list->topLevelItem(0); list->setCurrentItem(item);
     const QPoint eyePoint(15,list->visualItemRect(item).center().y());
@@ -333,7 +430,7 @@ int main(int argc, char **argv) {
     QStringList menuNames;for(auto action:mainMenu->actions())menuNames<<action->text();
     for(const QString &name:QStringList{"File","View","Stereo Window","Create Frame","Edit Frame","Out-of-Frame","History","Layout","Help","Guided Process","Check for Updates…","About"})if(!menuNames.contains(name))return 52;
     auto compactBar=window.findChild<QToolBar *>("compactControls");
-    if(!compactBar->actions().contains(windowAction) || compactBar->actions().contains(window.findChild<QAction *>("sectionToggle2")))return 53;
+    if(!compactBar->actions().contains(windowAction) || window.findChild<QAction *>("sectionToggle2"))return 53;
     bool readableList=false;
     QTimer::singleShot(0,[&]{auto dialog=window.findChild<QDialog *>("keyboardShortcutsDialog");if(!dialog)return;auto browser=dialog->findChild<QTextBrowser *>();readableList=browser && browser->toPlainText().contains("Command") && browser->toPlainText().contains("Option") && browser->toPlainText().contains("Control");dialog->grab().save("keyboard-shortcuts.png");dialog->reject();});
     QMetaObject::invokeMethod(&window,"showKeyboardShortcuts",Qt::DirectConnection);if(!readableList)return 54;
@@ -396,6 +493,36 @@ int main(int argc, char **argv) {
         creativeView->undoStack()->undo();if(!creativeView->textObjects().isEmpty())return 85;
         std::cout<<"Shape dialog Apply/undo and text/bubble editing Apply/Cancel/undo: PASS\n";
     }
+    auto showGrid=window.findChild<QAction *>("showGridAction");auto gridSettings=window.findChild<QAction *>("gridSettingsAction");
+    auto outlineAction=window.findChild<QAction *>("outlineFrameAction");
+    if(!showGrid || !gridSettings || !outlineAction || !showGrid->isCheckable() || showGrid->shortcut()!=QKeySequence(Qt::CTRL|Qt::Key_G))return 68;
+    const auto previousGrid=view->gridSettings();bool gridWired=false;
+    QTimer::singleShot(0,&window,[&] {
+        auto dialog=window.findChild<QDialog *>("gridSettingsDialog");if(!dialog)return;
+        auto enabled=dialog->findChild<QCheckBox *>("gridEnabled");auto horizontal=dialog->findChild<QSpinBox *>("gridHorizontal");
+        auto vertical=dialog->findChild<QSpinBox *>("gridVertical");auto mode=dialog->findChild<QComboBox *>("gridColorMode");
+        gridWired=enabled && horizontal && vertical && mode;
+        if(gridWired){enabled->setChecked(true);horizontal->setValue(6);vertical->setValue(8);mode->setCurrentIndex(1);dialog->grab().save("mac-grid-settings-ui.png");dialog->accept();}else dialog->reject();
+    });
+    gridSettings->trigger();
+    if(!gridWired || !showGrid->isChecked() || view->gridSettings().horizontal!=6 || !view->gridSettings().twoColors)return 68;
+    QTimer::singleShot(0,&window,[&]{auto dialog=window.findChild<QDialog *>("gridSettingsDialog");if(dialog){dialog->findChild<QSpinBox *>("gridHorizontal")->setValue(99);dialog->reject();}});
+    gridSettings->trigger();if(view->gridSettings().horizontal!=6)return 68;
+    QApplication::processEvents();if(!window.grab().save("mac-alignment-grid-ui.png"))return 68;
+    view->setGridSettings(previousGrid);
+    const auto previousFrame=view->pictureFrameSettings();bool outlineWired=false;
+    QTimer::singleShot(0,&window,[&] {
+        auto dialog=window.findChild<QDialog *>("outlineFrameDialog");if(!dialog)return;
+        auto enabled=dialog->findChild<QCheckBox *>("outlineEnabled");auto offset=dialog->findChild<QSpinBox *>("outlineOffset");
+        auto inner=dialog->findChild<QSpinBox *>("outlineInnerWidth");auto middle=dialog->findChild<QSpinBox *>("outlineMiddleWidth");auto outer=dialog->findChild<QSpinBox *>("outlineOuterWidth");
+        outlineWired=enabled && offset && inner && middle && outer;
+        if(outlineWired){enabled->setChecked(true);offset->setValue(4);inner->setValue(2);middle->setValue(3);outer->setValue(2);dialog->grab().save("mac-outline-settings-ui.png");dialog->accept();}else dialog->reject();
+    });
+    outlineAction->trigger();if(!outlineWired || !view->pictureFrameSettings().outlineEnabled || view->pictureFrameSettings().outlineOffset!=4)return 68;
+    QTimer::singleShot(0,&window,[&]{auto dialog=window.findChild<QDialog *>("outlineFrameDialog");if(dialog){dialog->findChild<QSpinBox *>("outlineOffset")->setValue(99);dialog->reject();}});
+    outlineAction->trigger();if(view->pictureFrameSettings().outlineOffset!=4)return 68;
+    QApplication::processEvents();if(!window.grab().save("mac-outline-frame-ui.png"))return 68;
+    view->setPictureFrameSettings(previousFrame);
     bool effectsWired=false,textApplyFeedback=false;
     QTimer::singleShot(0,&window,[&] {
         auto dialog=window.findChild<QDialog *>("stereoTextDialog");if(!dialog)return;
@@ -435,6 +562,53 @@ int main(int argc, char **argv) {
         QDesktopServices::unsetUrlHandler("https");
         std::cout<<"Support links: exact URLs, no opening request, nonmodal reuse, accessibility, Close/Escape/Command-W/window-close: PASS\n";
     }
+    guided->trigger();
+    auto guidedDock=window.findChild<QDockWidget *>("guidedProcessDock");
+    if(!guidedDock || !guidedDock->findChild<QPushButton *>("guidedNext") || !guidedDock->findChild<QLabel *>("guidedInstructions"))return 45;
+    guidedDock->hide();selectionToggle->setChecked(true);QApplication::processEvents();
+    if(!window.grab().save("mac-toolbox-open-ui.png"))return 63;
+    {
+        QSettings preferences(QDir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)).filePath("layout.ini"),QSettings::IniFormat);
+        const auto previous=preferences.value("quickAccess/commands");
+        quickAccess->addCommand("view.fit");quickAccess->addCommand("view.pan");quickAccess->addCommand("applyLassoAction");quickAccess->addCommand("selection.combo0.option3");
+        quickAccess->addCommand("showGridAction");quickAccess->addCommand("outlineFrameAction");
+        if(!quickAccess->commandIds().contains("showGridAction") || !quickAccess->commandIds().contains("outlineFrameAction"))return 68;
+        quickToggle->trigger();QApplication::processEvents();
+        if(!quickDrawer->isVisible() || selectionDrawer->isVisible())return 65;
+        auto panButton=quickAccess->findChild<QToolButton *>("quickAccessCommand_view.pan");
+        if(!panButton || !panButton->defaultAction()->isCheckable())return 65;
+        const bool wasChecked=panButton->isChecked();panButton->click();
+        if(panButton->isChecked()==wasChecked || panButton->defaultAction()->isChecked()!=panButton->isChecked())return 65;
+        panButton->click();
+        if(!window.grab().save("mac-quick-access-ui.png"))return 65;
+        if(previous.isValid())preferences.setValue("quickAccess/commands",previous);else preferences.remove("quickAccess/commands");
+        preferences.sync();quickAccess->restore();
+    }
+    history->show();QApplication::processEvents();
+    if(!window.grab().save("mac-toolbox-history-ui.png"))return 63;
+    collapse->trigger();QApplication::processEvents();
+    for(auto dock:window.findChildren<QDockWidget *>())if(dock!=guidedDock && dock->isVisible())return 63;
+    if(!window.grab().save("mac-toolbox-collapsed-ui.png"))return 63;
+    window.resize(900,650);selectionToggle->setChecked(true);QApplication::processEvents();
+    if(window.width()>900 || view->width()<400 || compact->width()>64)return 63;
+    if(!window.grab().save("mac-toolbox-small-ui.png"))return 63;
+    QSettings layoutSettings(QDir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)).filePath("layout.ini"),QSettings::IniFormat);
+    const QVariant previousLayout=layoutSettings.value("drawerLayout/state");
+    auto persistentGrid=view->gridSettings();persistentGrid.horizontal=7;persistentGrid.vertical=9;persistentGrid.twoColors=true;persistentGrid.opacity=61;
+    view->setGridSettings(persistentGrid);
+    selectionDrawer->setFloating(true);QApplication::processEvents();
+    window.close();
+    {
+        MainWindow restored;restored.resize(900,650);restored.show();QApplication::processEvents();
+        auto restoredView=restored.findChild<StereoViewWidget *>();
+        if(!restoredView || restoredView->gridSettings().horizontal!=7 || restoredView->gridSettings().vertical!=9 || !restoredView->gridSettings().twoColors || restoredView->gridSettings().opacity!=61)return 68;
+        auto selected=restored.findChild<QDockWidget *>("controlDrawer5");
+        auto restoredRail=restored.findChild<QToolBar *>("compactControls");
+        if(!selected || selected->isVisible() || !selected->isFloating() || restored.dockWidgetArea(selected)!=Qt::LeftDockWidgetArea || restored.toolBarArea(restoredRail)!=Qt::LeftToolBarArea)return 69;
+        for(auto drawer:restored.findChildren<QDockWidget *>())if(drawer->isVisible() != (drawer->objectName()=="controlDrawer0"))return 69;
+        restoredView->setGridSettings(previousGrid);restored.close();
+    }
+    if(previousLayout.isValid())layoutSettings.setValue("drawerLayout/state",previousLayout);else layoutSettings.remove("drawerLayout/state");
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

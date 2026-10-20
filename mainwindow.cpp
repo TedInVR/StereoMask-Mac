@@ -4,6 +4,7 @@
 #include "appversion.h"
 #include "supportdialog.h"
 #include "operationprogress.h"
+#include "quickaccess.h"
 #include <QShortcut>
 #include <QKeyEvent>
 #include "mainwindow.h"
@@ -51,6 +52,8 @@
 #include <QDialogButtonBox>
 #include <QShortcut>
 #include <QKeyEvent>
+#include <QCloseEvent>
+#include <QScrollArea>
 #include <QtMath>
 #include <cmath>
 
@@ -140,6 +143,7 @@ void AppSettings::addRecentFile(const QString &path)
 class StartupSplash : public QWidget {
 public:
     StartupSplash(QWidget *parent) : QWidget(nullptr, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
+        setObjectName("startupSplash");
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_DeleteOnClose);
         QVBoxLayout *layout = new QVBoxLayout(this);
@@ -164,11 +168,12 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R20 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R21 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
         text->setAlignment(Qt::AlignCenter);
+        text->setObjectName("startupVersionLabel");
         fLayout->addWidget(text);
         
         layout->addWidget(frame);
@@ -224,7 +229,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask"));
+    setWindowTitle(tr("StereoMask Mac R21 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -239,6 +244,15 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    QSettings preferences(QFileInfo(settingsFilePath()).dir().filePath("layout.ini"),QSettings::IniFormat);
+    preferences.setValue("drawerLayout/state",saveState(1));
+    m_restoringToolbox=true;
+    QMainWindow::closeEvent(event);
+    m_restoringToolbox=false;
 }
 
 void MainWindow::setupConnections()
@@ -348,6 +362,35 @@ static void addToolGroupLabel(QToolBar *toolbar, const QString &text)
     toolbar->addWidget(label);
 }
 
+class DrawerWidthController : public QObject
+{
+public:
+    DrawerWidthController(QScrollArea *scroll, const QList<QToolBar *> &rows)
+        : QObject(scroll), m_scroll(scroll), m_rows(rows)
+    {
+        scroll->viewport()->installEventFilter(this);
+    }
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if(event->type()==QEvent::Resize || event->type()==QEvent::Show) {
+            const int rowWidth=qMax(0,m_scroll->viewport()->width()-2);
+            for(auto row:m_rows) {
+                row->setFixedWidth(rowWidth);
+                const int controlWidth=qMax(0,rowWidth-4);
+                for(auto action:row->actions())if(auto widget=row->widgetForAction(action)) {
+                    if(qobject_cast<QComboBox *>(widget) || qobject_cast<QLabel *>(widget) || action->menu())
+                        widget->setFixedWidth(controlWidth);
+                }
+            }
+        }
+        return false;
+    }
+private:
+    QScrollArea *m_scroll;
+    QList<QToolBar *> m_rows;
+};
+
 static QIcon customIcon(const QString &name)
 {
     constexpr int size = 64;
@@ -409,6 +452,18 @@ static QIcon customIcon(const QString &name)
     } else if (name == "save") {
         p.setPen(QPen(ink, 4)); p.setBrush(QColor("#bfdbfe")); p.drawRoundedRect(QRectF(14, 13, 36, 38), 4, 4);
         p.setBrush(Qt::white); p.drawRect(21, 36, 22, 12); p.setBrush(blue); p.drawRect(22, 16, 17, 12);
+    } else if (name == "favorite") {
+        QPolygonF star;
+        for(int i=0;i<10;++i) {
+            const double angle=qDegreesToRadians(-90.0+i*36.0),radius=(i%2==0 ? 23.0 : 10.0);
+            star.append(QPointF(32+std::cos(angle)*radius,32+std::sin(angle)*radius));
+        }
+        p.setPen(QPen(ink,3));p.setBrush(QColor("#facc15"));p.drawPolygon(star);
+    } else if (name == "grid") {
+        for(int coordinate:{18,32,46}) {line({double(coordinate),12},{double(coordinate),52},blue,3);line({12,double(coordinate)},{52,double(coordinate)},green,3);}
+    } else if (name == "outlineFrame") {
+        p.setBrush(Qt::NoBrush);p.setPen(QPen(blue,3));p.drawRect(12,16,40,32);
+        p.setPen(QPen(green,3));p.drawRect(18,22,28,20);p.setPen(QPen(ink,2));p.drawRect(23,27,18,10);
     } else if (name == "export") {
         p.setPen(QPen(ink, 4)); p.setBrush(QColor("#dcfce7")); p.drawRect(13, 18, 38, 28);
         arrow({25, 32}, {45, 32}, green);
@@ -703,6 +758,12 @@ void MainWindow::createToolbar()
     QAction *pictureFrame=addToolAction(maskBar,customIcon("polygon"),tr("Picture Frame"),tr("Add a colored flat, beveled or decorative border to your frame"));
     pictureFrame->setObjectName("pictureFrameAction");
     connect(pictureFrame,&QAction::triggered,this,&MainWindow::adjustPictureFrame);
+    auto outlineFrame=addToolAction(maskBar,customIcon("outlineFrame"),tr("Outline Frame"),tr("Three-band outline outside the frame contour, with source-pixel offset, colors and widths"));
+    outlineFrame->setObjectName("outlineFrameAction");connect(outlineFrame,&QAction::triggered,this,&MainWindow::adjustOutlineFrame);
+    QAction *stereoText=addToolAction(maskBar,customIcon("curve"),tr("3D Text & Bubbles"),tr("Add stereo text, speech bubbles and thought bubbles"));
+    stereoText->setObjectName("stereoTextAction");
+    connect(stereoText,&QAction::triggered,this,&MainWindow::editStereoText);
+
     addToolGroupLabel(maskBar, tr("Mask"));
     QToolButton *autoMaskButton = new QToolButton(maskBar);
     autoMaskButton->setIcon(customIcon("autoMask"));
@@ -923,10 +984,17 @@ void MainWindow::createToolbar()
     connect(m_viewWidget,&StereoViewWidget::maskAppearanceChanged,this,syncAppearance);
     syncAppearance(m_viewWidget->maskColor(),m_viewWidget->maskOpacity());
 
+    const QString drawerButtonStyle=QStringLiteral(
+        "QToolButton { border: 1px solid transparent; background: transparent; padding: 1px; min-height: 20px; }"
+        "QToolButton:hover:!disabled { background: palette(midlight); }"
+        "QToolButton:pressed:!disabled { background: palette(mid); }"
+        "QToolButton:checked { background: palette(highlight); color: palette(highlighted-text); }"
+        "QToolButton:focus { border-color: palette(highlight); }");
     QDockWidget *selectionsDock=new QDockWidget(tr("History"),this);
     selectionsDock->setObjectName("selectionObjectsDock");
     selectionsDock->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
     QWidget *selectionPanel=new QWidget(selectionsDock);
+    selectionPanel->setStyleSheet(drawerButtonStyle);
     QVBoxLayout *selectionLayout=new QVBoxLayout(selectionPanel); selectionLayout->setContentsMargins(4,4,4,4);
     QToolBar *objectTools=new QToolBar(selectionPanel);
     objectTools->setIconSize(QSize(18,18));
@@ -953,13 +1021,14 @@ void MainWindow::createToolbar()
     objects->setHeaderLabels({tr(""),tr("Selection"),tr("Eye"),tr("Mode")});
     objects->setRootIsDecorated(false); objects->setSelectionMode(QAbstractItemView::SingleSelection);
     objects->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    objects->header()->setStretchLastSection(false);
     objects->header()->setSectionResizeMode(0,QHeaderView::Fixed); objects->setColumnWidth(0,30);
     objects->header()->setSectionResizeMode(1,QHeaderView::Stretch);
     objects->header()->setSectionResizeMode(2,QHeaderView::ResizeToContents);
     objects->header()->setSectionResizeMode(3,QHeaderView::ResizeToContents);
     selectionLayout->addWidget(objects); selectionsDock->setWidget(selectionPanel);
     addDockWidget(Qt::RightDockWidgetArea,selectionsDock);
-    selectionsDock->setMinimumWidth(290);
+    selectionsDock->setFixedWidth(240);
     auto updateObjectActions=[objects,editObject,renameObject,deleteObject,moveObjectUp,moveObjectDown,invertObject,movePolygon]() {
         auto item=objects->currentItem();
         editObject->setEnabled(item && item->data(1,Qt::UserRole+1).toBool());
@@ -1035,6 +1104,13 @@ void MainWindow::createToolbar()
         QSignalBlocker blocker(movePolygon);movePolygon->setChecked(enabled);
     });
     QMenu *viewMenu=menuBar()->addMenu(tr("&View"));
+    auto gridToggle=new QAction(customIcon("grid"),tr("Show Grid"),this);gridToggle->setObjectName("showGridAction");gridToggle->setCheckable(true);gridToggle->setShortcut(QKeySequence(Qt::CTRL|Qt::Key_G));
+    gridToggle->setToolTip(tr("Toggle the image-aligned editor grid (Command+G). Hidden in Clean Preview; never exported."));
+    auto gridSettingsAction=new QAction(customIcon("settings"),tr("Grid Settings"),this);gridSettingsAction->setObjectName("gridSettingsAction");
+    connect(gridSettingsAction,&QAction::triggered,this,&MainWindow::adjustGrid);
+    connect(gridToggle,&QAction::toggled,this,[this](bool enabled){auto grid=m_viewWidget->gridSettings();grid.enabled=enabled;m_viewWidget->setGridSettings(grid);});
+    connect(m_viewWidget,&StereoViewWidget::gridSettingsChanged,gridToggle,[this,gridToggle]{QSignalBlocker block(gridToggle);gridToggle->setChecked(m_viewWidget->gridSettings().enabled);});
+    viewMenu->addAction(gridToggle);viewMenu->addAction(gridSettingsAction);
     viewMenu->addAction(maskPreview); viewMenu->addAction(cleanPreview); viewMenu->addAction(selectionsDock->toggleViewAction());
     // Regroup existing actions without duplicating their handlers or tool state.
     const auto brushActions=brushBar->actions();
@@ -1046,7 +1122,7 @@ void MainWindow::createToolbar()
     populate(fileViewBar,{newAction,openAction,m_recentFilesMenu->menuAction(),findChild<QAction *>("closeProjectAction"),saveAction,exportAction});
     findChild<QAction *>("closeProjectAction")->setText(tr("Close"));
     navigationBar->setWindowTitle(tr("View"));
-    populate(navigationBar,{fit,zoomIn,zoomOut,pan,swap,anaglyph,maskPreview,cleanPreview,previewFeather});
+    populate(navigationBar,{fit,zoomIn,zoomOut,pan,swap,anaglyph,maskPreview,cleanPreview,previewFeather,gridToggle,gridSettingsAction});
     editMaskBar->setWindowTitle(tr("Edit Frame"));
     auto editFrame=editMaskBar->addAction(tr("Edit points"));editFrame->setObjectName("editFramePointsAction");
     auto enterFrame=[this,brushMode,pan,anaglyph,freehand] {
@@ -1060,7 +1136,7 @@ void MainWindow::createToolbar()
     addFramePoint->setToolTip(tr("Click to enter frame editing, then right-click an existing frame edge away from a dot. Left-drag the new dot into place. Existing dots remain."));
     connect(addFramePoint,&QAction::triggered,this,enterFrame);
     deleteSelected->setText(tr("Delete Point"));deleteSelected->setToolTip(tr("Select frame dots with a left-click (Command-click for multiple dots), then click Delete Point or press Delete. Undo restores them. While editing a lasso, Delete removes its latest segment."));
-    populate(editMaskBar,{undo,redo,deleteSelected,clear,alignLeft,alignRight,alignTop,alignBottom,alignDepth,pictureFrame,lockH,lockV,snap});
+    populate(editMaskBar,{undo,redo,deleteSelected,clear,alignLeft,alignRight,alignTop,alignBottom,alignDepth,pictureFrame,outlineFrame,lockH,lockV,snap});
     transformBar->setWindowTitle(tr("Edit Frame transforms"));
     addToolGroupLabel(transformBar,tr("Scale"));populate(transformBar,{scaleUp,scaleDown});transformBar->addSeparator();
     addToolGroupLabel(transformBar,tr("Move"));populate(transformBar,{shiftLeft,shiftRight,shiftUp,shiftDown});transformBar->addSeparator();
@@ -1075,7 +1151,7 @@ void MainWindow::createToolbar()
     addToolBarBreak();auto stereoBar=addToolBar(tr("Stereo Window"));configureToolbar(stereoBar);stereoBar->addAction(windowDepth);
     addToolBarBreak();auto createBar=addToolBar(tr("Create Frame"));configureToolbar(createBar);
     auto createPoints=createBar->addAction(tr("Create with points"));createPoints->setObjectName("createFramePointsAction");connect(createPoints,&QAction::triggered,this,enterFrame);
-    auto shapes=createBar->addAction(tr("Shapes…"));shapes->setObjectName("frameShapesAction");connect(shapes,&QAction::triggered,this,&MainWindow::createFrameShape);
+    auto shapes=createBar->addAction(customIcon("autoMask"),tr("Shapes…"));shapes->setObjectName("frameShapesAction");connect(shapes,&QAction::triggered,this,&MainWindow::createFrameShape);
     createBar->addAction(autoMaskWidgetAction);createBar->addAction(freehand);
     addToolBarBreak();auto helpBar=addToolBar(tr("Help"));configureToolbar(helpBar);help->setText(tr("User Guide"));populate(helpBar,{help,findChild<QAction *>("keyboardShortcutsAction"),findChild<QAction *>("supportStereoMaskAction")});
     auto wheelPan=navigationBar->addAction(tr("Scroll to Pan While Editing"));wheelPan->setObjectName("editingWheelPanAction");wheelPan->setCheckable(true);
@@ -1086,31 +1162,133 @@ void MainWindow::createToolbar()
     const QList<QList<QToolBar *>> sections={{fileViewBar},{navigationBar},{stereoBar},{createBar},{editMaskBar,transformBar},{brushBar,selectionBar,maskBar},{helpBar}};
     const QStringList names={tr("File"),tr("View"),tr("Stereo Window"),tr("Create Frame"),tr("Edit Frame"),tr("Out-of-Frame"),tr("Help")};
     for(const auto &rows:sections)for(auto row:rows){removeToolBarBreak(row);removeToolBar(row);}
-    bool firstRow=true;for(const auto &rows:sections)for(auto row:rows){if(!firstRow)addToolBarBreak();addToolBar(row);firstRow=false;}
     auto compact=new QToolBar(tr("Control sections"),this);compact->setObjectName("compactControls");configureToolbar(compact);
-    insertToolBar(fileViewBar,compact);insertToolBarBreak(fileViewBar);
+    compact->setWindowTitle(tr("Toolbox rail"));compact->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    compact->setAllowedAreas(Qt::LeftToolBarArea);addToolBar(Qt::LeftToolBarArea,compact);
     auto menus=new QMenu(this);menus->setObjectName("mainControlsMenu");
-    auto menuButton=new QToolButton(compact);menuButton->setText(tr("Main Menu"));menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
-    auto preferences=new QSettings(this);
+    auto menuButton=new QToolButton(compact);menuButton->setText(tr("Main Menu"));menuButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));menuButton->setToolTip(tr("Main Menu"));menuButton->setToolButtonStyle(Qt::ToolButtonIconOnly);menuButton->setMenu(menus);menuButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(menuButton);
+    auto preferences=new QSettings(QFileInfo(settingsFilePath()).dir().filePath("layout.ini"),QSettings::IniFormat,this);
+    GridSettings grid;
+    grid.enabled=preferences->value("workspace/grid/enabled",false).toBool();grid.twoColors=preferences->value("workspace/grid/twoColors",false).toBool();
+    grid.horizontal=preferences->value("workspace/grid/horizontal",10).toInt();grid.vertical=preferences->value("workspace/grid/vertical",10).toInt();grid.opacity=preferences->value("workspace/grid/opacity",70).toInt();
+    grid.first=QColor(preferences->value("workspace/grid/first","#808080").toString());grid.second=QColor(preferences->value("workspace/grid/second","#000000").toString());
+    m_viewWidget->setGridSettings(grid);
+    connect(m_viewWidget,&StereoViewWidget::gridSettingsChanged,this,[this,preferences] {
+        const auto grid=m_viewWidget->gridSettings();
+        preferences->setValue("workspace/grid/enabled",grid.enabled);preferences->setValue("workspace/grid/twoColors",grid.twoColors);
+        preferences->setValue("workspace/grid/horizontal",grid.horizontal);preferences->setValue("workspace/grid/vertical",grid.vertical);preferences->setValue("workspace/grid/opacity",grid.opacity);
+        preferences->setValue("workspace/grid/first",grid.first.name(QColor::HexArgb));preferences->setValue("workspace/grid/second",grid.second.name(QColor::HexArgb));
+    });
+    QList<QDockWidget *> drawers;
+    const QList<QIcon> drawerIcons={newAction->icon(),pan->icon(),windowDepth->icon(),shapes->icon(),editFrame->icon().isNull() ? curve->icon() : editFrame->icon(),freehand->icon(),help->icon()};
     QList<QAction *> toggles;
     for(int i=0;i<sections.size();++i) {
-        const auto rows=sections[i];const QString key=QString("organizedLayout/%1").arg(i);
+        const auto rows=sections[i];
         for(int j=0;j<rows.size();++j)rows[j]->setObjectName(j==0 ? QString("controlSection%1").arg(i) : QString("controlSection%1Row%2").arg(i).arg(j));
-        auto toggle=new QAction(names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggles.append(toggle);
-        const bool expanded=i!=2 && preferences->value(key,false).toBool();toggle->setChecked(expanded);for(auto row:rows)row->setVisible(expanded);
-        connect(toggle,&QAction::toggled,this,[rows,preferences,key](bool shown){for(auto row:rows)row->setVisible(shown);preferences->setValue(key,shown);});
-        if(i<6)compact->addAction(i==2 ? windowDepth : toggle);
+        if(i==2) {
+            stereoBar->hide();
+            toggles.append(windowDepth);
+            compact->addAction(windowDepth);
+            continue;
+        }
+        auto drawer=new QDockWidget(names[i],this);drawer->setObjectName(QString("controlDrawer%1").arg(i));
+        drawer->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
+        drawer->setFixedWidth(190);
+        drawer->setToolTip(tr("Drag the title bar to move or float this drawer. Close it to reclaim the canvas."));
+        auto scroll=new QScrollArea(drawer);scroll->setWidgetResizable(true);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setFrameShape(QFrame::NoFrame);
+        auto page=new QWidget(scroll);auto pageLayout=new QVBoxLayout(page);pageLayout->setContentsMargins(1,4,1,4);pageLayout->setSpacing(8);
+        page->setStyleSheet(drawerButtonStyle);
+        for(auto row:rows) {
+            row->setParent(page);row->setOrientation(Qt::Vertical);row->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+            row->setFixedWidth(168);row->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);pageLayout->addWidget(row,0,Qt::AlignLeft);row->show();
+            for(auto action:row->actions())if(auto widget=row->widgetForAction(action)) {
+                widget->setMinimumWidth(0);widget->setMaximumWidth(166);
+                row->layout()->setAlignment(widget,Qt::AlignLeft);
+                if(auto label=qobject_cast<QLabel *>(widget))label->setWordWrap(true);
+                if(auto spin=qobject_cast<QSpinBox *>(widget))spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+                if(auto combo=qobject_cast<QComboBox *>(widget)) {
+                    combo->setMinimumContentsLength(1);
+                    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+                    combo->setToolTip(combo->currentText());
+                    connect(combo,&QComboBox::currentTextChanged,combo,&QWidget::setToolTip);
+                }
+                if(auto button=qobject_cast<QToolButton *>(widget)) {
+                    auto caption=button->text();
+                    if(button->toolTip().isEmpty())button->setToolTip(caption);
+                    const int textWidth=166-12-(button->icon().isNull() ? 0 : button->iconSize().width()+4);
+                    button->setText(button->fontMetrics().elidedText(caption,Qt::ElideRight,textWidth));
+                }
+            }
+        }
+        pageLayout->addStretch();scroll->setWidget(page);new DrawerWidthController(scroll,rows);drawer->setWidget(scroll);addDockWidget(Qt::LeftDockWidgetArea,drawer);drawer->hide();drawers.append(drawer);
+        auto toggle=new QAction(drawerIcons[i],names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggle->setToolTip(tr("Open / close %1 drawer").arg(names[i]));toggles.append(toggle);
+        connect(toggle,&QAction::toggled,drawer,&QDockWidget::setVisible);
+        connect(drawer,&QDockWidget::visibilityChanged,toggle,[this,toggle,drawer](bool shown){if(!isMinimized()){QSignalBlocker blocker(toggle);toggle->setChecked(!drawer->isHidden());}Q_UNUSED(shown);});
+        if(i!=6)compact->addAction(toggle);
         for(auto row:rows)for(auto action:row->actions())if(!qobject_cast<QWidgetAction *>(action))addAction(action);
+    }
+    removeDockWidget(selectionsDock);addDockWidget(Qt::LeftDockWidgetArea,selectionsDock);selectionsDock->hide();drawers.append(selectionsDock);
+    selectionsDock->toggleViewAction()->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    auto quickDrawer=new QDockWidget(tr("Quick Access"),this);
+    quickDrawer->setObjectName("quickAccessDock");quickDrawer->setFixedWidth(190);
+    quickDrawer->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
+    auto quickAccess=new QuickAccess(preferences,quickDrawer);quickAccess->setStyleSheet(drawerButtonStyle);
+    quickDrawer->setWidget(quickAccess);addDockWidget(Qt::LeftDockWidgetArea,quickDrawer);quickDrawer->hide();drawers.append(quickDrawer);
+    auto quickToggle=quickDrawer->toggleViewAction();quickToggle->setObjectName("quickAccessToggleAction");quickToggle->setIcon(customIcon("favorite"));
+    quickToggle->setToolTip(tr("Open / close Quick Access"));compact->addAction(quickToggle);viewMenu->addAction(quickToggle);
+    const QList<QPair<QAction *,QString>> commandIds={
+        {newAction,"file.new"},{openAction,"file.open"},{m_recentFilesMenu->menuAction(),"file.recent"},{saveAction,"file.save"},{exportAction,"file.export"},
+        {fit,"view.fit"},{zoomIn,"view.zoomIn"},{zoomOut,"view.zoomOut"},{pan,"view.pan"},{swap,"view.swap"},{anaglyph,"view.anaglyph"},
+        {maskPreview,"view.maskPreview"},{previewFeather,"view.feather"},{undo,"edit.undo"},{redo,"edit.redo"},{deleteSelected,"edit.deletePoint"},{clear,"edit.clear"},
+        {alignLeft,"align.left"},{alignRight,"align.right"},{alignTop,"align.top"},{alignBottom,"align.bottom"},{alignDepth,"align.depth"},
+        {scaleUp,"transform.scaleUp"},{scaleDown,"transform.scaleDown"},{shiftLeft,"transform.left"},{shiftRight,"transform.right"},{shiftUp,"transform.up"},{shiftDown,"transform.down"},
+        {curve,"transform.curve"},{lockH,"edit.lockH"},{lockV,"edit.lockV"},{snap,"edit.snap"},{freehand,"frame.freehand"},
+        {closeOutline,"selection.close"},{cancelOutline,"selection.cancel"},{clearPaint,"selection.clearPaint"},{settings,"app.settings"},{help,"app.help"},{about,"app.about"},
+        {editObject,"history.edit"},{renameObject,"history.rename"},{deleteObject,"history.delete"},{moveObjectUp,"history.up"},{moveObjectDown,"history.down"}};
+    for(const auto &entry:commandIds)entry.first->setProperty("quickAccessId",entry.second);
+    for(int i=0;i<m_rotationActions.size();++i)m_rotationActions[i]->setProperty("quickAccessId",QString("transform.rotate%1").arg(i));
+    auto registerCommand=[quickAccess](QAction *action,const QString &category) {
+        if(!action || action->isSeparator() || qobject_cast<QWidgetAction *>(action))return;
+        QString id=action->property("quickAccessId").toString();
+        if(id.isEmpty())id=action->objectName();
+        if(id.isEmpty())return;
+        QString group=category;
+        if(id.startsWith("align."))group+=tr(" / Align");
+        else if(id.startsWith("transform.scale"))group+=tr(" / Scale");
+        else if(id=="transform.left" || id=="transform.right" || id=="transform.up" || id=="transform.down")group+=tr(" / Move");
+        action->setProperty("quickAccessId",id);quickAccess->registerCommand(id,group,action);
+    };
+    for(int i=0;i<sections.size();++i)for(auto row:sections[i])for(auto action:row->actions())registerCommand(action,names[i]);
+    for(auto action:objectTools->actions())registerCommand(action,tr("History"));
+    m_checkUpdatesAction->setProperty("quickAccessId","app.updates");
+    registerCommand(stereoText,tr("Text"));registerCommand(about,tr("Help"));registerCommand(m_checkUpdatesAction,tr("Help"));
+    auto autoCommand=new QAction(autoMaskButton->icon(),tr("AutoMask"),this);autoCommand->setObjectName("quickAccessAutoMaskAction");
+    autoCommand->setToolTip(autoMaskButton->toolTip());autoCommand->setEnabled(m_viewWidget->canAutoMask());
+    connect(autoCommand,&QAction::triggered,this,runAutoMask);
+    connect(m_viewWidget,&StereoViewWidget::maskEmptyChanged,autoCommand,[this,autoCommand](bool empty){autoCommand->setEnabled(m_viewWidget->isImageLoaded() && empty);});
+    registerCommand(autoCommand,tr("Create Frame"));quickAccess->attachButton(autoMaskButton,autoCommand->objectName());
+    for(int i=0;i<autoMaskGroup->actions().size();++i) {
+        auto action=autoMaskGroup->actions()[i];action->setProperty("quickAccessId",QString("autoMask.mode%1").arg(i));registerCommand(action,tr("AutoMask"));
+    }
+    for(auto drawer:drawers) {
+        auto activate=[this,drawer,drawers] {
+            if(m_restoringToolbox || !isVisible() || !drawer->isVisible() || drawer->isFloating())return;
+            for(auto other:drawers)if(other!=drawer && !other->isFloating())other->hide();
+        };
+        connect(drawer,&QDockWidget::visibilityChanged,this,[activate](bool shown){if(shown)activate();});
+        connect(drawer,&QDockWidget::topLevelChanged,this,[activate](bool floating){if(!floating)activate();});
     }
     compact->addSeparator();compact->addAction(selectionsDock->toggleViewAction());
     selectionsDock->toggleViewAction()->setToolTip(tr("Show or hide History: individual selection and brush edits, not a whole-project undo timeline"));
     auto layoutMenu=new QMenu(tr("Layout"),compact);
-    auto expandAll=[toggles](bool shown){for(int i=0;i<toggles.size();++i)if(i!=2)toggles[i]->setChecked(shown);};
-    layoutMenu->addAction(tr("Show all sections"),this,[expandAll]{expandAll(true);});layoutMenu->addAction(tr("Hide all sections"),this,[expandAll]{expandAll(false);});
-    auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);compact->addAction(toggles[6]);
-    auto textTool=compact->addAction(tr("Text & Bubbles"));textTool->setObjectName("stereoTextAction");connect(textTool,&QAction::triggered,this,&MainWindow::editStereoText);
+    auto collapse=layoutMenu->addAction(tr("Close all drawers"),this,[drawers]{for(auto drawer:drawers)drawer->hide();});collapse->setObjectName("collapseToolboxAction");
+    auto reset=layoutMenu->addAction(tr("Reset toolbox layout"),this,[this,drawers,toggles,compact]{m_restoringToolbox=true;compact->show();for(auto drawer:drawers){drawer->hide();drawer->setFloating(false);addDockWidget(Qt::LeftDockWidgetArea,drawer);}m_restoringToolbox=false;toggles[0]->setChecked(true);});reset->setObjectName("resetToolboxLayoutAction");
+    auto layoutButton=new QToolButton(compact);layoutButton->setText(tr("Layout"));layoutButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));layoutButton->setToolTip(tr("Toolbox layout"));layoutButton->setToolButtonStyle(Qt::ToolButtonIconOnly);layoutButton->setMenu(layoutMenu);layoutButton->setPopupMode(QToolButton::InstantPopup);compact->addWidget(layoutButton);
+    stereoText->setText(tr("Text & Bubbles"));compact->addAction(stereoText);auto textTool=stereoText;
     for(auto menuAction:menuBar()->actions())if(menuAction->menu() && menuAction->text()==tr("&Edit")){menuAction->menu()->addSeparator();menuAction->menu()->addAction(shapes);menuAction->menu()->addAction(textTool);}
-    auto guided=compact->addAction(tr("Guided Process"));guided->setObjectName("guidedProcessAction");connect(guided,&QAction::triggered,this,&MainWindow::startGuidedProcess);
+    auto guided=compact->addAction(style()->standardIcon(QStyle::SP_DialogHelpButton),tr("Guided Process"));guided->setObjectName("guidedProcessAction");guided->setToolTip(tr("Guided Process"));connect(guided,&QAction::triggered,this,&MainWindow::startGuidedProcess);
+    registerCommand(guided,tr("Help"));
+    compact->addAction(toggles[6]);
     // Widget controls stay in their sections: each is directly reachable from Main Menu.
     for(int i=0;i<sections.size();++i) {
         if(i==2){menus->addAction(windowDepth);continue;}
@@ -1122,7 +1300,7 @@ void MainWindow::createToolbar()
                 if(auto combo=qobject_cast<QComboBox *>(widget)) {
                     QString label=combo==brushMode ? tr("Selection Tool") : combo==brushBackground ? tr("Out-of-Frame Background") : tr("Add / Subtract");
                     auto choices=group->addMenu(label);
-                    for(int n=0;n<combo->count();++n){auto choice=choices->addAction(combo->itemText(n));connect(choice,&QAction::triggered,this,[combo,n]{combo->setCurrentIndex(n);QMetaObject::invokeMethod(combo,"activated",Qt::DirectConnection,Q_ARG(int,n));});}
+                    for(int n=0;n<combo->count();++n){auto choice=choices->addAction(combo->itemText(n));connect(choice,&QAction::triggered,this,[combo,n]{combo->setCurrentIndex(n);QMetaObject::invokeMethod(combo,"activated",Qt::DirectConnection,Q_ARG(int,n));});choice->setProperty("quickAccessId",QString("selection.combo%1.option%2").arg(combo==brushMode ? 0 : combo==brushBackground ? 1 : 2).arg(n));registerCommand(choice,label);}
                 } else if(auto spin=qobject_cast<QSpinBox *>(widget)) {
                     QString label=spin==frameDepth ? tr("Frame Point Depth") : spin==brushSize ? tr("Brush Size") : spin==colorTolerance ? tr("Color Tolerance") : tr("Background Opacity");
                     auto setValue=group->addAction(label+tr("…"));connect(setValue,&QAction::triggered,this,[this,spin,label]{bool ok=false;int value=QInputDialog::getInt(this,label,tr("Value"),spin->value(),spin->minimum(),spin->maximum(),spin->singleStep(),&ok);if(ok)spin->setValue(value);});
@@ -1132,10 +1310,17 @@ void MainWindow::createToolbar()
             } else group->addAction(action);
         }
     }
-    menus->addAction(selectionsDock->toggleViewAction());menus->addMenu(layoutMenu);menus->addAction(guided);menus->addAction(textTool);menus->addSeparator();menus->addAction(m_checkUpdatesAction);menus->addAction(about);
-    const QString historyKey="compactLayout/history";
-    selectionsDock->setVisible(preferences->value(historyKey,false).toBool());
-    connect(selectionsDock,&QDockWidget::visibilityChanged,this,[this,preferences,historyKey](bool shown){if(isVisible() && !isMinimized()) preferences->setValue(historyKey,shown);});
+    menus->addAction(quickToggle);menus->addAction(selectionsDock->toggleViewAction());menus->addMenu(layoutMenu);menus->addAction(guided);menus->addAction(textTool);menus->addSeparator();menus->addAction(m_checkUpdatesAction);menus->addAction(about);
+    viewMenu->addMenu(layoutMenu);
+    viewMenu->addAction(compact->toggleViewAction());
+    for(auto button:findChildren<QToolButton *>())if(auto action=button->defaultAction())quickAccess->attachButton(button,action->property("quickAccessId").toString());
+    quickAccess->restore();
+    // Restore placement, then always start with File alone, as requested for Mac.
+    restoreState(preferences->value("drawerLayout/state").toByteArray(),1);
+    for(auto drawer:drawers)drawer->hide();
+    compact->show();
+    findChild<QDockWidget *>("controlDrawer0")->show();
+    m_restoringToolbox=false;
     refreshObjects();
 
 }
@@ -1251,7 +1436,8 @@ void MainWindow::showSettings()
 void MainWindow::showHelp()
 {
     QFile source(":/docs/user-guide.html");
-    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/help/r20";
+    const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/help/%1").arg(STEREOMASK_VERSION);
     if (!QDir().mkpath(folder) || !source.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("User Guide"), tr("Could not prepare the user guide."));
         return;
@@ -1284,7 +1470,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R20 (%1)</h2>"
+        tr("<h2>StereoMask Mac R21 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "

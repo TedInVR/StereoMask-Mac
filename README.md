@@ -1,12 +1,23 @@
 # StereoMask Mac
 
-StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theodore Whitten**. This repository contains the Mac port and foreground-editing improvements based on StereoMask 2.0.0, now incorporating Subbiah’s Windows v2.3.0 additions.
+StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theodore Whitten**. This repository contains the Mac port and foreground-editing improvements based on StereoMask 2.0.0, now incorporating Subbiah’s Windows v2.5.0 additions.
 
 - **Subbiah Rathinagiri (S. Rathinagiri):** original StereoMask author and upstream PC/Windows development.
 - **Theodore Whitten:** Mac port, editing workflow and foreground-selection improvements, developed with Codex assistance.
 - **Upstream:** [SRathinaGiri/StereoMask](https://github.com/SRathinaGiri/StereoMask).
 
-The original MIT copyright and license are preserved in [LICENSE](LICENSE). Windows v2.3.0 incorporates the Mac workflow and creative tools plus new Windows enhancements. Mac R20 / 2.3.1 brings the new color selection, text effects, geometry fixes and processing feedback back to Mac. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+The original MIT copyright and license are preserved in [LICENSE](LICENSE). Mac R21 / 2.5.0 integrates Subbiah’s Windows v2.4.0–v2.5.0 additions while retaining Mac navigation, updater, support links and installation. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+
+## New in R21 / 2.5.0
+
+- Left-side toolbox drawers replace stacked toolbar rows, leaving more room for the image. Click an icon to open/close, or drag its title to float/move it. One docked drawer opens at a time; floating drawers remain independent. Mac drawers use 190 logical pixels for readable controls.
+- Quick Access star panel: favorite original commands, search/add/remove/reorder in its manager, or secondary-click a supported button. Checked and enabled states stay synchronized; favorites persist locally.
+- Every startup opens File only, with all other drawers closed. Positions and favorites persist. Layout can close all drawers or reset them to the left.
+- View → Show Grid (Command+G) and Grid Settings: line counts, one/two colors and opacity. Source-aligned, pan/zoom aware, hidden in Clean Preview and never exported or saved into projects.
+- Edit Frame → Outline Frame: independent inner/middle/outer bands, widths, colors, source-pixel gap, and preview-background-color tracking. Curves and per-eye depth are respected; preserved foreground covers the outline. Undo/Redo and project saving retain settings. Normal editor visibility is independent of Clean Preview/export. Existing borders/shadows remain independent; the canvas clips all bands.
+- appversion.h now also generates the embedded User Guide version; browser help uses a version-specific cache directory.
+
+See [integration notes](docs/mac-r21-integration-notes.md) and the [Windows handoff](docs/windows-to-mac-handoff-v2.5.0.md) for source references, platform choices and validation limits.
 
 ## Voluntary support
 
@@ -41,7 +52,7 @@ No embedded payments, startup requests, ads, editing interruptions or paid app f
 - Help includes readable Keyboard Shortcuts and an editor with saved preferences, conflict checks and Restore Defaults; drawing gestures remain fixed.
 - Main Menu reaches every control group; Stereo Window opens directly. Open Recent and last-folder persistence are available.
 - Logical groups: File, View, Stereo Window, Create Frame, Edit Frame, Out-of-Frame, History, Layout and Help.
-- Compact in-window controls: independent collapsible sections, Show/Hide all, complete menu access in full screen, and a persistent History toggle.
+- Compact in-window toolbox drawers, complete Main Menu access in full screen, and a persistent History toggle.
 - Frame point insertion at the nearest edge preserves existing vertices.
 - Picture Frame: customizable color and width, Flat/Beveled/Decorative Trim styles; preserved foreground covers the border.
 - Stereo Window: Push back/Pull forward buttons, dialog-wide Left/Right keys and larger pixel arrows.
@@ -62,7 +73,7 @@ No embedded payments, startup requests, ads, editing interruptions or paid app f
 
 ## Build on Apple Silicon
 
-R18 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
+R21 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
 
 Install Xcode Command Line Tools and Homebrew, then the build dependencies:
 
@@ -81,9 +92,9 @@ For later updates, run `bash "/Applications/StereoMask Development/UPDATE_STEREO
 From a Git checkout, run `bash BUILD_BRUSH_VERSION.command` in its source directory.
 The script configures CMake, builds, deploys Qt, repairs dependency references, verifies the bundle and ad-hoc signs it. It stops on deployment or startup errors. It stages and verifies the new bundle, replaces `/Applications/StereoMask.app` and launches that permanent copy. A failed install verification restores the previous installed bundle. Keep the same Dock icon. If Applications is not writable, the installer stops and you can use Finder to copy the built app and choose Replace. CMake’s cache is regenerated so a moved development folder does not retain its old location.
 
-### R18 status
+### R21 status
 
-R18 imports the upstream v2.1.1 core and UI, with Mac shortcuts, guide, updater endpoint and build packaging preserved. Cross-platform regression results are recorded in DEVELOPMENT_LOG.md. Actual Apple Silicon packaging, Finder launch, physical Command-click/Return delivery and relocation still need Mac confirmation for this revision. Paired alignment is an estimate; check the opposite-eye outline and adjust manually. Smart lasso remains optional.
+The integration is verified with cross-platform Qt/OpenCV regression checks listed in DEVELOPMENT_LOG.md. Actual Apple Silicon packaging, Finder launch, native font/DPI appearance, secondary-click and physical shortcut delivery need Mac confirmation for this revision. Paired alignment is an estimate; inspect the opposite-eye outline and adjust manually. Smart lasso remains optional.
 
 The dependency repair redirects non-system loads into the bundle, checks for duplicate OpenMP and re-signs. It does not bypass duplicate-runtime checks.
 Ad-hoc signing is local signing; this is not an Apple Developer ID signed or notarized public binary. Do not label a binary release ready until both Finder launch and relocation to Applications have been verified. Third-party binary notices/licenses must accompany any binary release; this source repository preserves the original app license.

@@ -1,3 +1,26 @@
+# Current handoff: Mac R21 / 2.5.0 (2026-10-20)
+
+Subbiah's AI: **explain each proposed Mac-specific change individually to Subbiah before implementing it in Windows**. For each, ask whether he wants to Adopt, Adapt, Defer or Decline. Mac choices are not mandatory Windows requirements. Never replace his code or preferences blindly. See [R21 integration notes](mac-r21-integration-notes.md) for the precise upstream and Mac source baselines.
+
+Mac R21 has now adopted Windows v2.4.0–v2.5.0 toolbox drawers, Quick Access, shared help version, alignment grids and three-band outline frames. Do not offer these back as new Mac inventions. Windows processing-panel lifetime and text-cache fixes already overlap Mac R19: avoid duplicate changes.
+
+Only these new Mac adaptations merit individual optional review:
+
+| Change | Reason / choice to discuss |
+| --- | --- |
+| Startup opens File alone every time | Ted requested a consistently clear canvas, overriding saved open drawers but retaining placement and favorites. Windows may retain its remembered-open-drawer behavior. |
+| Command drawers / Quick Access use 190 logical pixels | More space for Mac controls than the Windows 150-pixel design. Confirm native fonts/DPI before changing Windows. |
+| Outline label “Use preview background color” | Clarifies existing mask QColor behavior. Project JSON keys and rendering semantics are unchanged. |
+| Command+G and readable modifier names | Mac convention; retain Ctrl+G on Windows. |
+
+Existing intentional Mac differences remain: four-neighbor fuzzy selection, anaglyph Stereo Window default, wheel zoom with opt-in editing-wheel pan, AppKit activation, Mac source updater/packaging and Ted's optional support destinations. Do not import his payment destinations into Windows without separate agreement.
+
+Updated User Guide covers all new features. Linux Qt/OpenCV regression results appear in DEVELOPMENT_LOG.md; no native Mac packaging certification is implied.
+
+---
+
+## Historical handoff below
+
 # Mac-to-Windows handoff: optional changes after Windows v2.1.1
 
 **Update 2026-10-15:** Windows v2.3.0 has already incorporated the main R12–R18 features below. Mac R19 integrates its reciprocal additions. For current changes and individually reviewable corrections, see [Mac R19 integration notes](mac-r19-integration-notes.md). The original item-by-item approval guidance remains in force for new Windows work.

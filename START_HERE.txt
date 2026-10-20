@@ -1,43 +1,40 @@
-StereoMask Mac R20 / 2.3.1
+StereoMask Mac R21 / 2.5.0
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
-3. Run BUILD_BRUSH_VERSION.command to build, verify, install and launch
+3. Run UPDATE_STEREOMASK.command to update, build, verify, install and launch
    /Applications/StereoMask.app. Use that same app/Dock icon every time.
-4. For future source updates, run UPDATE_STEREOMASK.command.
-   It uses temporary downloads and updates the same development folder.
+4. To rebuild existing source without downloading, run BUILD_BRUSH_VERSION.command.
 
-New: Selections panel, individual polygon editing/reordering/visibility,
-whole-polygon movement, optional paired and Smart lassos, matching export
-previews, frame holes and updated Mac help.
+New in R21: toolbox drawers, Quick Access favorites, View > Show Grid
+(Command+G), and Edit Frame > Outline Frame for three colored outline bands.
+Every startup opens File only. Hover over left-rail icons for their names.
+Click a drawer icon again to close it; Layout can close all or reset drawers.
 
-Turn Preview Result OFF to see the whole source while tracing.
-Choose Transparent (PNG) for a transparent export; new images default
-to Match preview, which uses mask color and opacity.
+Stereo Window opens its depth-adjustment dialog directly. Guided Process
+walks through opening, adjusting, framing, foreground selection and export.
+Help > User Guide explains all tools. Help > Keyboard Shortcuts spells out
+key names and lets you edit shortcuts. Main Menu reaches every control group.
 
-Help > User Guide explains the tools and Mac shortcuts.
+Turn Preview Result OFF to see the whole source while tracing. Use Add/Subtract
+with brushes or polygonal lassos separately in each eye. History lists current
+selection objects, not a complete Undo timeline. Save Project keeps edits;
+Export produces the finished image. Transparent output requires PNG.
+
+View grids are editor-only and never exported. Applied outline frames appear
+in Clean Preview and export even when Display in editor is off. Foreground
+covers outline bands; the existing image canvas clips all borders/shadows.
+Older app versions may discard new outline fields: exchange project copies.
+
 Main Menu > Check for Updates checks the Mac repository; it does not install.
+The updater uses temporary downloads and the same permanent development folder.
 
-Source release for Apple Silicon. This revision still needs actual Mac
-packaging, Finder launch and input verification before a binary release.
+This is an Apple Silicon source release, not a new prebuilt binary. Actual Mac
+packaging, Finder launch, font sizing and physical key/secondary-click delivery
+need native confirmation. Existing dependency repair/signing/install checks run
+before replacing the installed app.
 
-First optional step: Stereo Window opens an anaglyph slider. Apply commits
-one undoable source-depth adjustment; Cancel leaves it unchanged. Save
-the project to keep it. Help explains the new tool and side strips.
-
-R18: use Guided Process for step-by-step editing. Help > Keyboard Shortcuts lists keys with names and offers Edit Shortcuts. Main Menu includes every control group, Open Recent, Check for Updates and About.
-
-R18 additions:
-Create Frame > Shapes: choose, drag, resize and apply an editable frame.
-Edit Frame > Picture Frame: optional Drop Shadow controls.
-Text & Bubbles: fonts, stereo depth, speech/thought bubbles and draggable tails.
-All save in projects. Older versions ignore text/shadow additions; keep copies.
-
-R19 integrates Windows v2.3.0: Fuzzy/Color selection with tolerance, text relief
-and cutout plates, stereo X/Y/Z tilt, alignment/point-order fixes, processing
-feedback and text caches. Anaglyph and scroll-to-zoom remain Mac defaults.
-View > Scroll to Pan While Editing is optional. User Guide explains the tools.
-
-R20: Help > Support StereoMask has optional Ko-fi, PayPal and Patreon browser
-links supporting Ted in VR. Available from native/in-window Help and Main Menu.
-All features stay free; no startup requests. Close, Escape or Command+W dismisses.
+Help > Support StereoMask offers optional Ko-fi, PayPal and Patreon links for
+Ted in VR. All features remain free; no startup requests or embedded checkout.
+StereoMask is a collaboration by Subbiah Rathinagiri and Theodore Whitten,
+inspired by Bernd Paksa's Stereomasken. The original MIT license is retained.
