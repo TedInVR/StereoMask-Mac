@@ -1,5 +1,6 @@
 #include "quickaccess.h"
 #include <QAction>
+#include <QCursor>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
@@ -162,13 +163,17 @@ void QuickAccess::manage()
     availableColumn->addWidget(available);columns->addLayout(availableColumn,1);
     auto controls=new QVBoxLayout;
     auto add=new QToolButton(&dialog);add->setObjectName("quickAccessAdd");
-    add->setIcon(arrowIcon(&dialog,QStyle::SP_ArrowRight));add->setToolTip(tr("Add selected command"));
+    add->setText(tr("Add"));add->setToolButtonStyle(Qt::ToolButtonTextOnly);add->setToolTip(tr("Add selected command"));
     controls->addStretch();controls->addWidget(add);controls->addStretch();columns->addLayout(controls);
     auto chosenColumn=new QVBoxLayout;chosenColumn->addWidget(new QLabel(tr("Quick Access"),&dialog));
     auto chosen=new QListWidget(&dialog);chosen->setObjectName("quickAccessChosen");
     chosen->setDragDropMode(QAbstractItemView::InternalMove);
     chosen->setDefaultDropAction(Qt::MoveAction);chosenColumn->addWidget(chosen);
-    auto tools=new QToolBar(&dialog);tools->setIconSize(QSize(18,18));
+    auto run=new QPushButton(tr("Open Selected Command"),&dialog);run->setObjectName("quickAccessRun");run->setAutoDefault(false);
+    run->setToolTip(tr("Run the selected favorite. Unsaved list changes are discarded; choose Save to keep them first."));
+    chosenColumn->addWidget(run);
+    QPointer<QAction> pendingCommand;
+    auto tools=new QToolBar(&dialog);tools->setIconSize(QSize(18,18));tools->setToolButtonStyle(Qt::ToolButtonTextOnly);
     auto up=tools->addAction(arrowIcon(&dialog,QStyle::SP_ArrowUp),tr("Move up"));up->setObjectName("quickAccessMoveUp");
     auto down=tools->addAction(arrowIcon(&dialog,QStyle::SP_ArrowDown),tr("Move down"));down->setObjectName("quickAccessMoveDown");
     auto remove=tools->addAction(style()->standardIcon(QStyle::SP_DialogDiscardButton),tr("Remove"));remove->setObjectName("quickAccessRemove");
@@ -184,8 +189,11 @@ void QuickAccess::manage()
     connect(search,&QLineEdit::textChanged,&dialog,[available](const QString &text) {
         for(int i=0;i<available->count();++i)available->item(i)->setHidden(!available->item(i)->text().contains(text,Qt::CaseInsensitive));
     });
-    const auto update=[available,chosen,add,up,down,remove] {
+    const auto update=[this,available,chosen,add,up,down,remove,run] {
         const int row=chosen->currentRow();up->setEnabled(row>0);down->setEnabled(row>=0 && row<chosen->count()-1);remove->setEnabled(row>=0);
+        const auto favorite=chosen->currentItem();
+        const auto entry=favorite ? command(favorite->data(Qt::UserRole).toString()) : nullptr;
+        run->setEnabled(entry && entry->action->isEnabled());
         auto selected=available->currentItem();bool duplicate=false;
         for(int i=0;selected && i<chosen->count();++i)duplicate|=chosen->item(i)->data(Qt::UserRole)==selected->data(Qt::UserRole);
         add->setEnabled(selected && !selected->isHidden() && !duplicate);
@@ -198,6 +206,16 @@ void QuickAccess::manage()
         }
         update();
     };
+    const auto runSelected=[this,chosen,&pendingCommand,&dialog] {
+        auto selected=chosen->currentItem();
+        auto entry=selected ? command(selected->data(Qt::UserRole).toString()) : nullptr;
+        if(!entry || !entry->action->isEnabled())return;
+        pendingCommand=entry->action;
+        dialog.reject(); // Running a command never commits an unsaved favorites draft.
+    };
+    connect(run,&QPushButton::clicked,&dialog,runSelected);
+    connect(chosen,&QListWidget::itemDoubleClicked,&dialog,[runSelected]{runSelected();});
+    for(const auto &entry:m_commands)if(entry.action)connect(entry.action,&QAction::changed,&dialog,[update]{update();});
     connect(add,&QToolButton::clicked,&dialog,addSelected);
     connect(available,&QListWidget::itemDoubleClicked,&dialog,[addSelected]{addSelected();});
     connect(available,&QListWidget::currentRowChanged,&dialog,[update]{update();});
@@ -220,5 +238,8 @@ void QuickAccess::manage()
         m_ids.clear();
         for(int i=0;i<chosen->count();++i)m_ids.append(chosen->item(i)->data(Qt::UserRole).toString());
         save();
+    } else if(pendingCommand && pendingCommand->isEnabled()) {
+        if(auto menu=pendingCommand->menu())menu->popup(QCursor::pos());
+        else pendingCommand->trigger();
     }
 }

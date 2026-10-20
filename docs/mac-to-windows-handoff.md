@@ -1,4 +1,16 @@
-# Current handoff: Mac R21 / 2.5.0 (2026-10-20)
+# Current handoff: Mac R22 / 2.5.1 (2026-10-20)
+
+Subbiah's AI: explain each Mac change individually and let him choose Adopt, Adapt, Defer or Decline before implementing anything in Windows. These are Ted's Mac UI preferences, not requirements for the Windows version.
+
+- Rail tooltip wording: File; View; Adjust Stereo Window; Create Stereo Frame; Edit Stereo Frame; Out-of-Frame; Quick Access; History of Edits; Help. Removed “Open / close” and “drawer” from these icon tips. Existing menu/panel headings stay unchanged.
+- Star opens the existing Quick Access window directly; the Quick Access dock is removed. Favorites remain local layout.ini preferences. Double-click a chosen favorite or Open Selected Command closes the window and invokes the original QAction, or opens its menu. Original command availability is checked at activation. Running rejects the unsaved favorites draft; Save still commits it. The editing dock is unaffected by opening this window.
+- Mac R21's File-only startup and all imported grid/outline/editing features remain.
+
+No project schema or packaging changes. Updated guide/version metadata and UI/favorites regressions. Native Mac font/input/launch confirmation remains separate from Linux verification.
+
+---
+
+## Previous handoff: Mac R21 / 2.5.0 (2026-10-20)
 
 Subbiah's AI: **explain each proposed Mac-specific change individually to Subbiah before implementing it in Windows**. For each, ask whether he wants to Adopt, Adapt, Defer or Decline. Mac choices are not mandatory Windows requirements. Never replace his code or preferences blindly. See [R21 integration notes](mac-r21-integration-notes.md) for the precise upstream and Mac source baselines.
 

@@ -1,4 +1,4 @@
-StereoMask Mac R21 / 2.5.0
+StereoMask Mac R22 / 2.5.1
 
 1. Keep source/build files in /Applications/StereoMask Development.
 2. Save your work and quit all StereoMask windows.
@@ -6,9 +6,12 @@ StereoMask Mac R21 / 2.5.0
    /Applications/StereoMask.app. Use that same app/Dock icon every time.
 4. To rebuild existing source without downloading, run BUILD_BRUSH_VERSION.command.
 
-New in R21: toolbox drawers, Quick Access favorites, View > Show Grid
+Included: toolbox drawers, Quick Access favorites, View > Show Grid
 (Command+G), and Edit Frame > Outline Frame for three colored outline bands.
-Every startup opens File only. Hover over left-rail icons for their names.
+Every startup opens File only. Left-rail tooltips use short, plain names.
+The star opens the Quick Access window directly. Double-click a favorite in
+the right list, or choose Open Selected Command. Save commits list changes;
+opening a command discards an unsaved list draft. No intermediate drawer.
 Click a drawer icon again to close it; Layout can close all or reset drawers.
 
 Stereo Window opens its depth-adjustment dialog directly. Guided Process

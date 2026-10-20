@@ -1,6 +1,6 @@
 {
-  "version": "2.5.0",
+  "version": "2.5.1",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R21 integrates Windows v2.4\u2013v2.5 toolbox drawers, Quick Access favorites, editor-only alignment grids and three-band outline frames. Startup opens File only. Updated versioned User Guide; Mac shortcuts, updater, support and packaging retained. Source download; build on your Mac."
+  "notes": "Mac R22 simplifies left-rail tooltips and opens the Quick Access window directly from the star. Favorites can launch their original commands or menus; no intermediate drawer. Updated User Guide. File-only startup and all R21 editing features remain. Source download; build on your Mac."
 }

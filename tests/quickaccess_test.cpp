@@ -5,6 +5,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -78,5 +79,29 @@ int main(int argc,char **argv)
     if(restored.commandIds()!=panel.commandIds())return 12;
     settings.setValue("quickAccess/commands",QStringList({"missing","first","first","third"}));
     restored.restore();if(restored.commandIds()!=QStringList({"first","third"}))return 13;
+    panel.restore();
+    QTimer::singleShot(0,&panel,[&] {
+        auto dialog=panel.window()->findChild<QDialog *>("quickAccessManager");
+        auto chosen=dialog->findChild<QListWidget *>("quickAccessChosen");
+        chosen->setCurrentRow(1);dialog->findChild<QAction *>("quickAccessRemove")->trigger();
+        chosen->setCurrentRow(0);dialog->findChild<QPushButton *>("quickAccessRun")->click();
+    });
+    panel.manage();
+    if(triggers!=2 || !first.isChecked() || panel.commandIds()!=QStringList({"first","third"}))return 14;
+    first.setEnabled(false);
+    QTimer::singleShot(0,&panel,[&] {
+        auto dialog=panel.window()->findChild<QDialog *>("quickAccessManager");
+        auto chosen=dialog->findChild<QListWidget *>("quickAccessChosen");chosen->setCurrentRow(0);
+        if(dialog->findChild<QPushButton *>("quickAccessRun")->isEnabled())std::exit(15);
+        dialog->reject();
+    });
+    panel.manage();first.setEnabled(true);
+    QMenu recent;recent.addAction("Recent file");third.setMenu(&recent);
+    QTimer::singleShot(0,&panel,[&] {
+        auto dialog=panel.window()->findChild<QDialog *>("quickAccessManager");
+        dialog->findChild<QListWidget *>("quickAccessChosen")->setCurrentRow(1);
+        dialog->findChild<QPushButton *>("quickAccessRun")->click();
+    });
+    panel.manage();app.processEvents();if(!recent.isVisible())return 16;recent.close();
     std::cout<<"Quick Access commands, state, context menu, manager, ordering and persistence passed.\n";
 }

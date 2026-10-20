@@ -168,7 +168,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R21 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R22 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -229,7 +229,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask Mac R21 (%1)").arg(STEREOMASK_VERSION));
+    setWindowTitle(tr("StereoMask Mac R22 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -1180,6 +1180,7 @@ void MainWindow::createToolbar()
         preferences->setValue("workspace/grid/first",grid.first.name(QColor::HexArgb));preferences->setValue("workspace/grid/second",grid.second.name(QColor::HexArgb));
     });
     QList<QDockWidget *> drawers;
+    const QStringList railTips={tr("File"),tr("View"),tr("Adjust Stereo Window"),tr("Create Stereo Frame"),tr("Edit Stereo Frame"),tr("Out-of-Frame"),tr("Help")};
     const QList<QIcon> drawerIcons={newAction->icon(),pan->icon(),windowDepth->icon(),shapes->icon(),editFrame->icon().isNull() ? curve->icon() : editFrame->icon(),freehand->icon(),help->icon()};
     QList<QAction *> toggles;
     for(int i=0;i<sections.size();++i) {
@@ -1187,6 +1188,7 @@ void MainWindow::createToolbar()
         for(int j=0;j<rows.size();++j)rows[j]->setObjectName(j==0 ? QString("controlSection%1").arg(i) : QString("controlSection%1Row%2").arg(i).arg(j));
         if(i==2) {
             stereoBar->hide();
+            windowDepth->setToolTip(railTips[i]);
             toggles.append(windowDepth);
             compact->addAction(windowDepth);
             continue;
@@ -1221,7 +1223,7 @@ void MainWindow::createToolbar()
             }
         }
         pageLayout->addStretch();scroll->setWidget(page);new DrawerWidthController(scroll,rows);drawer->setWidget(scroll);addDockWidget(Qt::LeftDockWidgetArea,drawer);drawer->hide();drawers.append(drawer);
-        auto toggle=new QAction(drawerIcons[i],names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggle->setToolTip(tr("Open / close %1 drawer").arg(names[i]));toggles.append(toggle);
+        auto toggle=new QAction(drawerIcons[i],names[i],this);toggle->setObjectName(QString("sectionToggle%1").arg(i));toggle->setCheckable(true);toggle->setToolTip(railTips[i]);toggles.append(toggle);
         connect(toggle,&QAction::toggled,drawer,&QDockWidget::setVisible);
         connect(drawer,&QDockWidget::visibilityChanged,toggle,[this,toggle,drawer](bool shown){if(!isMinimized()){QSignalBlocker blocker(toggle);toggle->setChecked(!drawer->isHidden());}Q_UNUSED(shown);});
         if(i!=6)compact->addAction(toggle);
@@ -1229,13 +1231,12 @@ void MainWindow::createToolbar()
     }
     removeDockWidget(selectionsDock);addDockWidget(Qt::LeftDockWidgetArea,selectionsDock);selectionsDock->hide();drawers.append(selectionsDock);
     selectionsDock->toggleViewAction()->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    auto quickDrawer=new QDockWidget(tr("Quick Access"),this);
-    quickDrawer->setObjectName("quickAccessDock");quickDrawer->setFixedWidth(190);
-    quickDrawer->setAllowedAreas(Qt::LeftDockWidgetArea|Qt::RightDockWidgetArea);
-    auto quickAccess=new QuickAccess(preferences,quickDrawer);quickAccess->setStyleSheet(drawerButtonStyle);
-    quickDrawer->setWidget(quickAccess);addDockWidget(Qt::LeftDockWidgetArea,quickDrawer);quickDrawer->hide();drawers.append(quickDrawer);
-    auto quickToggle=quickDrawer->toggleViewAction();quickToggle->setObjectName("quickAccessToggleAction");quickToggle->setIcon(customIcon("favorite"));
-    quickToggle->setToolTip(tr("Open / close Quick Access"));compact->addAction(quickToggle);viewMenu->addAction(quickToggle);
+    // The star opens the Quick Access window directly, without a docked panel.
+    auto quickAccess=new QuickAccess(preferences,this);quickAccess->hide();
+    auto quickToggle=new QAction(customIcon("favorite"),tr("Quick Access"),this);
+    quickToggle->setObjectName("quickAccessToggleAction");quickToggle->setToolTip(tr("Quick Access"));
+    connect(quickToggle,&QAction::triggered,quickAccess,&QuickAccess::manage);
+    compact->addAction(quickToggle);viewMenu->addAction(quickToggle);
     const QList<QPair<QAction *,QString>> commandIds={
         {newAction,"file.new"},{openAction,"file.open"},{m_recentFilesMenu->menuAction(),"file.recent"},{saveAction,"file.save"},{exportAction,"file.export"},
         {fit,"view.fit"},{zoomIn,"view.zoomIn"},{zoomOut,"view.zoomOut"},{pan,"view.pan"},{swap,"view.swap"},{anaglyph,"view.anaglyph"},
@@ -1279,7 +1280,7 @@ void MainWindow::createToolbar()
         connect(drawer,&QDockWidget::topLevelChanged,this,[activate](bool floating){if(!floating)activate();});
     }
     compact->addSeparator();compact->addAction(selectionsDock->toggleViewAction());
-    selectionsDock->toggleViewAction()->setToolTip(tr("Show or hide History: individual selection and brush edits, not a whole-project undo timeline"));
+    selectionsDock->toggleViewAction()->setToolTip(tr("History of Edits"));
     auto layoutMenu=new QMenu(tr("Layout"),compact);
     auto collapse=layoutMenu->addAction(tr("Close all drawers"),this,[drawers]{for(auto drawer:drawers)drawer->hide();});collapse->setObjectName("collapseToolboxAction");
     auto reset=layoutMenu->addAction(tr("Reset toolbox layout"),this,[this,drawers,toggles,compact]{m_restoringToolbox=true;compact->show();for(auto drawer:drawers){drawer->hide();drawer->setFloating(false);addDockWidget(Qt::LeftDockWidgetArea,drawer);}m_restoringToolbox=false;toggles[0]->setChecked(true);});reset->setObjectName("resetToolboxLayoutAction");
@@ -1470,7 +1471,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R21 (%1)</h2>"
+        tr("<h2>StereoMask Mac R22 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "

@@ -35,6 +35,7 @@
 #include <QTextBrowser>
 #include <QTextEdit>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QTableWidget>
 #include <QCheckBox>
 #include <QToolBar>
@@ -139,14 +140,14 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
-    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R21 (%1)").arg(STEREOMASK_VERSION))return 67;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R22 (%1)").arg(STEREOMASK_VERSION))return 67;
     {
         QEventLoop wait;
         QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
         bool currentSplash=false;
         for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
             auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
-            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R21 (%1)</h1>").arg(STEREOMASK_VERSION));
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R22 (%1)</h1>").arg(STEREOMASK_VERSION));
             topLevel->close();
         }
         if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
@@ -240,7 +241,7 @@ int main(int argc, char **argv) {
             std::cerr<<"Startup must show File only: "<<drawer->objectName().toStdString()<<'\n';return 69;
         }
     }
-    window.grab().save("mac-r21-startup.png");
+    window.grab().save("mac-r22-startup.png");
     history->show();
     QApplication::processEvents();
     if(history->width()!=240){std::cerr<<"History must use its compact 240-pixel width\n";return 63;}
@@ -252,11 +253,19 @@ int main(int argc, char **argv) {
     auto createToggle=window.findChild<QAction *>("sectionToggle3");
     auto selectionToggle=window.findChild<QAction *>("sectionToggle5");
     auto quickToggle=window.findChild<QAction *>("quickAccessToggleAction");
-    auto quickDrawer=window.findChild<QDockWidget *>("quickAccessDock");
     auto quickAccess=window.findChild<QuickAccess *>("quickAccessPanel");
-    if(!quickToggle || !quickDrawer || !quickAccess || !compact->actions().contains(quickToggle))return 65;
-    quickToggle->trigger();QApplication::processEvents();
-    if(!quickDrawer->isVisible() || history->isVisible() || quickDrawer->width()!=190)return 65;
+    if(!quickToggle || window.findChild<QDockWidget *>("quickAccessDock") || !quickAccess || !compact->actions().contains(quickToggle) || quickToggle->isCheckable())return 65;
+    const QList<QPair<QString,QString>> tooltipNames={{"sectionToggle0","File"},{"sectionToggle1","View"},{"stereoWindowAction","Adjust Stereo Window"},{"sectionToggle3","Create Stereo Frame"},{"sectionToggle4","Edit Stereo Frame"},{"sectionToggle5","Out-of-Frame"},{"quickAccessToggleAction","Quick Access"},{"sectionToggle6","Help"}};
+    for(const auto &entry:tooltipNames)if(window.findChild<QAction *>(entry.first)->toolTip()!=entry.second)return 70;
+    if(history->toggleViewAction()->toolTip()!="History of Edits")return 70;
+    bool quickWindowOpened=false;
+    QTimer::singleShot(0,&window,[&] {
+        auto dialog=window.findChild<QDialog *>("quickAccessManager");
+        quickWindowOpened=dialog && dialog->isVisible() && dialog->findChild<QListWidget *>("quickAccessChosen");
+        if(dialog)dialog->reject();
+    });
+    quickToggle->trigger();
+    if(!quickWindowOpened || !history->isVisible())return 65;
     auto collapse=window.findChild<QAction *>("collapseToolboxAction");
     auto resetLayout=window.findChild<QAction *>("resetToolboxLayoutAction");
     if(!createDrawer || !selectionDrawer || !collapse || !resetLayout || window.toolBarArea(compact)!=Qt::LeftToolBarArea || compact->width()>64){std::cerr<<"Toolbox rail/controls missing or too wide: "<<compact->width()<<'\n';return 63;}
@@ -267,7 +276,6 @@ int main(int argc, char **argv) {
     if(createDrawer->isVisible() || view->width()<openCanvasWidth+190){std::cerr<<"Closing drawer did not reclaim canvas\n";return 63;}
     selectionToggle->trigger();QApplication::processEvents();
     if(!selectionDrawer->isVisible() || createDrawer->isVisible() || !selectionDrawer->findChild<QScrollArea *>()){std::cerr<<"Selection drawer did not open\n";return 63;}
-    if(quickDrawer->isVisible())return 65;
     auto selectionScroll=selectionDrawer->findChild<QScrollArea *>();
     for(auto combo:selectionDrawer->findChildren<QComboBox *>()) {
         const int right=combo->mapTo(selectionScroll->viewport(),QPoint(combo->width(),0)).x();
@@ -573,14 +581,21 @@ int main(int argc, char **argv) {
         quickAccess->addCommand("view.fit");quickAccess->addCommand("view.pan");quickAccess->addCommand("applyLassoAction");quickAccess->addCommand("selection.combo0.option3");
         quickAccess->addCommand("showGridAction");quickAccess->addCommand("outlineFrameAction");
         if(!quickAccess->commandIds().contains("showGridAction") || !quickAccess->commandIds().contains("outlineFrameAction"))return 68;
-        quickToggle->trigger();QApplication::processEvents();
-        if(!quickDrawer->isVisible() || selectionDrawer->isVisible())return 65;
         auto panButton=quickAccess->findChild<QToolButton *>("quickAccessCommand_view.pan");
         if(!panButton || !panButton->defaultAction()->isCheckable())return 65;
-        const bool wasChecked=panButton->isChecked();panButton->click();
-        if(panButton->isChecked()==wasChecked || panButton->defaultAction()->isChecked()!=panButton->isChecked())return 65;
-        panButton->click();
-        if(!window.grab().save("mac-quick-access-ui.png"))return 65;
+        auto panAction=panButton->defaultAction();const bool wasChecked=panAction->isChecked();
+        bool launched=false;
+        QTimer::singleShot(0,&window,[&] {
+            auto dialog=window.findChild<QDialog *>("quickAccessManager");if(!dialog)return;
+            auto chosen=dialog->findChild<QListWidget *>("quickAccessChosen");
+            for(int i=0;i<chosen->count();++i)if(chosen->item(i)->data(Qt::UserRole).toString()=="view.pan")chosen->setCurrentRow(i);
+            launched=dialog->findChild<QPushButton *>("quickAccessRun")->isEnabled();
+            dialog->grab().save("mac-quick-access-window-ui.png");
+            dialog->findChild<QPushButton *>("quickAccessRun")->click();
+        });
+        quickToggle->trigger();QApplication::processEvents();
+        if(!launched || panAction->isChecked()==wasChecked || !selectionDrawer->isVisible())return 65;
+        panAction->trigger();
         if(previous.isValid())preferences.setValue("quickAccess/commands",previous);else preferences.remove("quickAccess/commands");
         preferences.sync();quickAccess->restore();
     }
