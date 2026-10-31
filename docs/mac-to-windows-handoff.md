@@ -253,3 +253,21 @@ keyboard appearance cannot be verified on this Linux host. No Windows upstream c
 was overwritten. Existing decorative frame/shadow clipping at source canvas boundaries
 remains: inset frame points to leave space; export padding does not reconstruct an
 already clipped border.
+
+
+## Mac R24 / 2.6.1 — Preview naming and panel behavior
+
+- Former Preview Result is now **Preview with Frame Lines**; its existing
+  editing-overlay behavior and action ID view.maskPreview are preserved.
+- Former Clean Preview is now **Preview**; F8 and cleanPreviewAction remain
+  compatible. It hides frame points/lines, hints and grids and blocks drawing
+  until disabled, as before.
+- Every added editing-panel preview button now shares cleanPreviewAction,
+  so clicking it shows the unobstructed result.
+- Guided Process and User Guide use the new names. Source-editing transitions
+  use stable action IDs rather than matching the renamed caption.
+- Regression checks cover both captions, panel button wiring and both toggle
+  behaviors. Native Mac appearance remains unverified here.
+
+Subbiah: Adopt, Adapt, Defer or Decline this Mac UI preference independently;
+explain it before implementing any Windows change. Both underlying modes remain.

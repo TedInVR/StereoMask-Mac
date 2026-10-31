@@ -69,7 +69,7 @@ void MainWindow::adjustOutlineFrame()
     auto layout=new QVBoxLayout(&dialog);
     auto enabled=new QCheckBox(tr("Apply outline frame"),&dialog);enabled->setObjectName("outlineEnabled");enabled->setChecked(settings.outlineEnabled);layout->addWidget(enabled);
     auto display=new QCheckBox(tr("Display in editor"),&dialog);display->setObjectName("outlineDisplay");display->setChecked(settings.outlineDisplay);layout->addWidget(display);
-    display->setToolTip(tr("Clean Preview and export always include an applied outline."));
+    display->setToolTip(tr("Preview and export always include an applied outline."));
     auto form=new QFormLayout;layout->addLayout(form);
     auto offset=number(form,tr("Offset from frame:"),"outlineOffset",settings.outlineOffset,1000);offset->setSuffix(tr(" px"));
     offset->setToolTip(tr("Gap outside the frame contour in source-image pixels. The outline follows each eye's depth and is clipped to the image canvas."));

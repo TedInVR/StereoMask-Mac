@@ -144,21 +144,28 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
-    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R23 (%1)").arg(STEREOMASK_VERSION))return 67;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R24 (%1)").arg(STEREOMASK_VERSION))return 67;
     {
         QEventLoop wait;
         QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
         bool currentSplash=false;
         for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
             auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
-            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R23 (%1)</h1>").arg(STEREOMASK_VERSION));
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R24 (%1)</h1>").arg(STEREOMASK_VERSION));
             topLevel->close();
         }
         if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
     }
     for(int section:{1,3,4,5}){
         auto button=window.findChild<QToolButton *>(QString("toolPreview%1").arg(section));
-        if(!button || button->defaultAction()!=window.findChild<QAction *>("previewResultAction"))return 110;
+        if(!button || button->defaultAction()!=window.findChild<QAction *>("cleanPreviewAction"))return 110;
+    }
+    {
+        auto clean=window.findChild<QAction *>("cleanPreviewAction");auto lines=window.findChild<QAction *>("previewResultAction");
+        auto canvas=window.findChild<StereoViewWidget *>();auto button=window.findChild<QToolButton *>("toolPreview5");
+        if(!clean || !lines || clean->text()!=QStringLiteral("Preview") || lines->text()!=QStringLiteral("Preview with Frame Lines"))return 120;
+        const bool before=canvas->cleanPreviewEnabled();button->click();if(canvas->cleanPreviewEnabled()==before)return 121;button->click();if(canvas->cleanPreviewEnabled()!=before)return 122;
+        const bool linesBefore=canvas->maskPreviewEnabled();lines->trigger();if(canvas->maskPreviewEnabled()==linesBefore)return 123;lines->trigger();
     }
     if(!window.findChild<QAction *>("hardBrushAction") || !window.findChild<QAction *>("softBrushAction") || !window.findChild<QCheckBox *>("edgeBlurEnabled"))return 111;
     QAction *guide = nullptr;

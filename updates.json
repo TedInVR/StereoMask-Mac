@@ -1,6 +1,6 @@
 {
-  "version": "2.6.0",
+  "version": "2.6.1",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R23: Preview Result in editing panels, drag-and-drop image opening, hard/soft brushes and selection Edge Blur. Multi-output export with readable filenames and saved defaults (Parallel only initially). One-time updater migration enables closed-app checks every 15 minutes. Source builds require the existing Mac toolchain."
+  "notes": "Mac R24: Preview is now the clean, unobstructed view (F8). Editing-panel Preview buttons use it. The separate option is named Preview with Frame Lines. Both behaviors retained. User Guide and Guided Process wording updated."
 }
