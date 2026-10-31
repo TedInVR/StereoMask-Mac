@@ -475,3 +475,49 @@ The star, View and Main Menu share a non-checkable Quick Access action opening i
 Updated the runtime/release version, title/splash/About, generated offline guide, README, start instructions and outgoing handoff. The handoff presents these as optional Mac preferences for Subbiah's individual review, not Windows requirements. No project-format, updater endpoint, packaging or payment-link changes.
 
 Verification: application built successfully with Linux Qt 6.4.2/OpenCV 4.6; all five CTest suites passed after the source changes. After the final popup labels/guide edit, the two affected UI/favorites suites were rebuilt and passed again. Checks cover exact requested rail tips, direct star-to-dialog wiring with no Quick Access dock, unchanged active editing dock, original checkable command execution, disabled command handling, submenu opening, retained Save/Cancel/persistence and rejection of unsaved list drafts during execution. Reviewed the Quick Access screenshot for readable controls. Whitespace checks are clean. Native Mac appearance, physical secondary-click/shortcuts and packaged launch remain for Mac confirmation; this is a source update.
+
+
+## Mac R23 / 2.6.0 — October 31, 2026
+
+Subbiah and his AI: explain each item separately and obtain Subbiah’s Adopt, Adapt,
+Defer or Decline decision before modifying Windows. These are optional Mac changes.
+
+1. **Preview Result in each editing drawer** (`mainwindow.cpp`). The shared QAction
+   appears above View/Create/Edit/Out-of-Frame controls, keeping state synchronized.
+2. **Window-wide photo drops** (`mainwindow.cpp`, `.h`). A main-window-scoped app
+   event filter handles one local photo over canvas or controls, with Save/Discard/
+   Cancel, unfinished-outline and export guards. Native macOS file-drop behavior
+   still needs a physical Finder-to-app verification. Dock-icon opening is separate.
+3. **Hard/Soft brush** (`stereoviewwidget.cpp`, `.h`, `mainwindow.cpp`). Crisp/fuzzy
+   icons beside Size. Radial alpha stamps with interpolation support select/erase;
+   masks retain their feathered pixels through history, undo and saved project PNGs.
+4. **Selection Edge Blur** (same files). Optional 1–100 px width and 0–100% strength,
+   applied to foreground Add/Subtract contributions before ordered compositing.
+   Basic frame shape is unchanged. Project fields: selectionEdgeBlur (bool),
+   selectionEdgeWidth (int), selectionEdgeAmount (int); missing values disable it.
+   Preview/export share exportEye/openingMask. Alpha blur now writes valid
+   premultiplied white values. This is a shared selection setting, not per-object.
+5. **Batch export** (`exportoptions.h`, `mainwindow.cpp`). Wide name entry plus a
+   wrapped full-name label; folder and PNG/JPEG controls; seven independent outputs:
+   Parallel, Cross-eye, Color/Half Color/Grayscale anaglyph, Left, Right. Suffixes
+   avoid collisions across formats; overwrite confirmation and per-file atomic writes.
+   A batch can partially succeed if a later file fails; the error explains this.
+6. **Export Preferences** (`mainwindow.cpp`). Local QSettings export/defaultOutputs
+   bitmask; absent/invalid/zero defaults to Parallel (1). Each export reads defaults
+   anew and temporary choices do not alter preferences. Reset/Save/Cancel provided.
+7. **Closed-app automatic updater migration** (`scripts/automatic_updates.py`,
+   `BUILD_BRUSH_VERSION.command`). Mac-only, optional per-user LaunchAgent at 900s.
+   Checks process before network/build and installer checks immediately before replace.
+   Downloads pinned commit, rejects traversal/symlinks/oversized source zip, validates
+   version, stages/verifies signed bundle with existing rollback installer. Background
+   builds do not install missing dependencies, prompt, launch app, or clutter Downloads.
+   File → Automatic Updates controls stable Application Support preference. Initial
+   registration uses the same manual update command; future updates use the agent.
+   No hosted prebuilt binary: existing Homebrew/Xcode toolchain remains necessary.
+
+Validation: C++ compilation and offscreen UI/rendering tests plus Python packaging/
+updater tests. Native Finder drops, launchctl scheduling, Mac signing and physical
+keyboard appearance cannot be verified on this Linux host. No Windows upstream code
+was overwritten. Existing decorative frame/shadow clipping at source canvas boundaries
+remains: inset frame points to leave space; export padding does not reconstruct an
+already clipped border.

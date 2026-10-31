@@ -6,6 +6,10 @@
 #include <QProgressBar>
 #include "stereoviewwidget.h"
 #include <QApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QFutureWatcher>
 #include <QComboBox>
 #include "stereowindowview.h"
 #include "operationprogress.h"
@@ -140,18 +144,23 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
-    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R22 (%1)").arg(STEREOMASK_VERSION))return 67;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R23 (%1)").arg(STEREOMASK_VERSION))return 67;
     {
         QEventLoop wait;
         QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
         bool currentSplash=false;
         for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
             auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
-            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R22 (%1)</h1>").arg(STEREOMASK_VERSION));
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R23 (%1)</h1>").arg(STEREOMASK_VERSION));
             topLevel->close();
         }
         if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
     }
+    for(int section:{1,3,4,5}){
+        auto button=window.findChild<QToolButton *>(QString("toolPreview%1").arg(section));
+        if(!button || button->defaultAction()!=window.findChild<QAction *>("previewResultAction"))return 110;
+    }
+    if(!window.findChild<QAction *>("hardBrushAction") || !window.findChild<QAction *>("softBrushAction") || !window.findChild<QCheckBox *>("edgeBlurEnabled"))return 111;
     QAction *guide = nullptr;
     bool updates = false;
     for (QAction *menuAction : window.menuBar()->actions()) {
@@ -624,6 +633,44 @@ int main(int argc, char **argv) {
         restoredView->setGridSettings(previousGrid);restored.close();
     }
     if(previousLayout.isValid())layoutSettings.setValue("drawerLayout/state",previousLayout);else layoutSettings.remove("drawerLayout/state");
+    {
+        MainWindow workflow;workflow.resize(1200,800);workflow.show();QApplication::processEvents();
+        auto canvas=workflow.findChild<StereoViewWidget *>();canvas->setAutoSave(false);
+        QMimeData mime;mime.setUrls({QUrl::fromLocalFile(imagePath)});
+        for(QWidget *target:{static_cast<QWidget*>(canvas),static_cast<QWidget*>(workflow.findChild<QToolBar *>("compactControls"))}){
+            QDragEnterEvent enter(QPoint(10,10),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(target,&enter);
+            if(!enter.isAccepted())return 112;
+            QDropEvent drop(QPointF(10,10),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(target,&drop);
+            if(!drop.isAccepted() || canvas->imagePath()!=imagePath)return 113;
+        }
+        QSettings exportPrefs;const auto previous=exportPrefs.value("export/defaultOutputs");exportPrefs.remove("export/defaultOutputs");
+        QAction *prefsAction=nullptr;for(auto action:workflow.findChildren<QAction *>())if(action->text()==QStringLiteral("Export Preferences…"))prefsAction=action;
+        if(!prefsAction)return 117;
+        QTimer::singleShot(0,&workflow,[&]{auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog)return;auto checks=dialog->findChildren<QCheckBox *>();if(checks.size()==7)checks[1]->setChecked(true);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();});
+        prefsAction->trigger();if(exportPrefs.value("export/defaultOutputs").toInt()!=3)return 118;
+        QTimer::singleShot(0,&workflow,[&]{auto dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());if(!dialog)return;auto checks=dialog->findChildren<QCheckBox *>();for(auto check:checks)check->setChecked(false);dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel)->click();});
+        prefsAction->trigger();if(exportPrefs.value("export/defaultOutputs").toInt()!=3)return 119;
+        exportPrefs.remove("export/defaultOutputs");
+        bool exportDialogChecked=false;
+        QTimer::singleShot(0,&workflow,[&]{
+            auto dialog=workflow.findChild<QDialog *>("exportOptionsDialog");if(!dialog)return;
+            exportDialogChecked=dialog->width()>=800;
+            for(int i=0;i<7;++i){auto check=dialog->findChild<QCheckBox *>(QString("exportMode%1").arg(i));if(!check || check->isChecked()!=(i==0))exportDialogChecked=false;if(check)check->setChecked(true);}
+            dialog->findChild<QLineEdit *>("exportBaseName")->setText("A_long_filename_that_remains_fully_readable_in_the_export_window");
+            dialog->grab().save("mac-r23-export-ui.png");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+        });
+        QMetaObject::invokeMethod(&workflow,"exportImage",Qt::DirectConnection);
+        auto watcher=workflow.findChild<QFutureWatcher<bool> *>();
+        for(int i=0;watcher->isRunning() && i<500;++i){QApplication::processEvents();QThread::msleep(10);}QApplication::processEvents();
+        if(!exportDialogChecked || watcher->isRunning() || !watcher->result())return 114;
+        for(const auto &suffix:QStringList{"Parallel","Crossview","Anaglyph_Color","Anaglyph_HalfColor","Anaglyph_Grayscale","Left","Right"}){
+            QImage saved(selectionFixture.path()+"/A_long_filename_that_remains_fully_readable_in_the_export_window_"+suffix+".png");if(saved.isNull())return 115;
+            if(saved.width()!=(suffix=="Parallel"||suffix=="Crossview"?pair.width():pair.width()/2))return 116;
+        }
+        if(previous.isValid())exportPrefs.setValue("export/defaultOutputs",previous);else exportPrefs.remove("export/defaultOutputs");
+        workflow.close();
+    }
     QDesktopServices::unsetUrlHandler("file");
     std::cout << "Help menu opens exact embedded guide through file URL; new brush names verified.\n";
     return 0;

@@ -108,6 +108,13 @@ public:
 
     void setBrushMode(int mode) { if (m_refining) return; setPolygonMoveEnabled(false); if (mode != 7 && mode != 8) { if (m_lassoClosed) finishLasso(); else cancelLasso(); } m_brushMode = mode; m_panMode = false; m_freehandMode = false; m_pickingColor = false; setCursor((mode == 3 || mode >= 7) ? Qt::CrossCursor : mode ? Qt::BlankCursor : Qt::ArrowCursor); setFocus(); update(); }
     int brushMode() const { return m_brushMode; }
+    void setSoftBrush(bool soft) { m_softBrush=soft; }
+    bool softBrush() const { return m_softBrush; }
+    void setSelectionEdgeBlur(bool enabled,int width,int amount);
+    void applySelectionEdgeBlur(bool enabled,int width,int amount);
+    bool selectionEdgeBlurEnabled() const { return m_edgeBlur; }
+    int selectionEdgeWidth() const { return m_edgeWidth; }
+    int selectionEdgeAmount() const { return m_edgeAmount; }
     void setBrushSize(int size) { m_brushSize = qBound(1, size, 1000); update(); }
     void setColorSelectionTolerance(int value) { m_colorSelectionTolerance=qBound(0,value,255); }
     int colorSelectionTolerance() const { return m_colorSelectionTolerance; }
@@ -240,6 +247,7 @@ signals:
     void maskColorPicked(const QColor &color);
     void maskAppearanceChanged(const QColor &color, float opacity);
     void brushSettingsLoaded(int mode, int background);
+    void selectionEdgeBlurChanged();
     void selectionChanged(int currentDisparity);
     void curveSelectionChanged(bool hasCurveSelection);
     void maskEmptyChanged(bool isEmpty);
@@ -309,6 +317,8 @@ private:
     void rebuildLassoClosing();
     void removeLassoPoint(int index);
     int m_brushMode = 0, m_brushSize = 40, m_colorSelectionTolerance = 32, m_cutoutBackground = 4;
+    bool m_softBrush=false, m_edgeBlur=false;
+    int m_edgeWidth=3, m_edgeAmount=100;
     bool m_cutout = false, m_brushing = false, m_brushRight = false;
     QImage m_revealLeft, m_revealRight, m_beforeStroke;
     QPointF m_lastBrushPoint;

@@ -77,6 +77,8 @@ private slots:
 
 private:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *target, QEvent *event) override;
+    void showExportPreferences();
     bool m_restoringToolbox = true;
     void createMenus();
     void createToolbar();

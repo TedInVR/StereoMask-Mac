@@ -55,6 +55,13 @@ class InstallTest(unittest.TestCase):
             installer.install(self.source, self.target, shutil.copytree, lambda _: None)
         self.assertEqual((self.target / 'version').read_text(), 'other')
 
+    def test_app_opened_during_staging_keeps_existing_app(self):
+        def guard():
+            raise RuntimeError('app started')
+        with self.assertRaisesRegex(RuntimeError, 'app started'):
+            installer.install(self.source, self.target, shutil.copytree, lambda _: None, before_replace=guard)
+        self.assertEqual((self.target / 'version').read_text(), 'old')
+
     def test_first_install(self):
         shutil.rmtree(self.target)
         installer.install(self.source, self.target, shutil.copytree, lambda _: None)

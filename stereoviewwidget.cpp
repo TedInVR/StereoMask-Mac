@@ -114,9 +114,7 @@ static void boxBlurAlpha(QImage &image, int radius)
         for (int y = 0; y < h; ++y) {
             QRgb *line = reinterpret_cast<QRgb*>(image.scanLine(y));
             int alpha = sum / (radius * 2 + 1);
-            QColor c = QColor::fromRgba(line[x]);
-            c.setAlpha(alpha);
-            line[x] = c.rgba();
+            line[x] = qRgba(alpha,alpha,alpha,alpha);
 
             int removeY = qBound(0, y - radius, h - 1);
             int addY = qBound(0, y + radius + 1, h - 1);
@@ -650,7 +648,7 @@ QImage StereoViewWidget::exportEye(bool right, bool includeText, bool editor) co
           <<m_pictureFrame.outlineInnerColor<<m_pictureFrame.outlineMiddleColor<<m_pictureFrame.outlineOuterColor
           <<m_pictureFrame.outlineInnerBackground<<m_pictureFrame.outlineMiddleBackground<<m_pictureFrame.outlineOuterBackground
           <<includeText<<editor
-          <<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
+          <<m_edgeBlur<<m_edgeWidth<<m_edgeAmount<<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
     if(includeText) for(const auto &text:m_textObjects)stream<<QJsonDocument(textToJson(text)).toJson(QJsonDocument::Compact);
     for (const auto &point:m_points)
         stream<<point.pos<<point.disparity<<point.isCurve<<point.cp1<<point.cp2<<point.cp1Disparity<<point.cp2Disparity;
@@ -684,15 +682,27 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
     QPainter painter(&mask); painter.setRenderHint(QPainter::Antialiasing);
     if (!m_points.isEmpty())
         drawFeatheredPath(painter,createImageMaskPath(m_points,QRectF(source.rect()),1.0f,right,false),Qt::white,feather);
+    auto soften=[this](QImage original) {
+        if(!m_edgeBlur || m_edgeAmount==0 || original.isNull())return original;
+        QImage blurred=original;boxBlurAlpha(blurred,m_edgeWidth);
+        for(int y=0;y<original.height();++y){auto dst=reinterpret_cast<QRgb*>(original.scanLine(y));const auto src=reinterpret_cast<const QRgb*>(blurred.constScanLine(y));
+            for(int x=0;x<original.width();++x){int alpha=(qAlpha(dst[x])*(100-m_edgeAmount)+qAlpha(src[x])*m_edgeAmount)/100;dst[x]=qRgba(alpha,alpha,alpha,alpha);}
+        }return original;
+    };
     const QImage base=right ? m_baseRevealRight : m_baseRevealLeft;
-    if (!base.isNull()) painter.drawImage(0,0,base);
+    if (!base.isNull()) painter.drawImage(0,0,soften(base));
     for (const auto &object:m_selectionObjects) {
         if (!object.visible || object.right!=right) continue;
         painter.setCompositionMode(object.subtract ? QPainter::CompositionMode_DestinationOut : QPainter::CompositionMode_SourceOver);
-        if (!object.raster.isNull()) painter.drawImage(0,0,object.raster);
+        if(m_edgeBlur && m_edgeAmount>0){
+            QImage contribution=object.raster;
+            if(contribution.isNull()){contribution=QImage(source.size(),QImage::Format_ARGB32_Premultiplied);contribution.fill(Qt::transparent);QPainter cp(&contribution);cp.setRenderHint(QPainter::Antialiasing);cp.fillPath(object.path,Qt::white);}
+            painter.drawImage(0,0,soften(contribution));
+        }else if (!object.raster.isNull()) painter.drawImage(0,0,object.raster);
         else painter.fillPath(object.path,Qt::white);
     }
-    painter.end(); return mask;
+    painter.end();
+    return mask;
 }
 void StereoViewWidget::rebuildSelectionMasks() {
     auto state=selectionState();
@@ -1060,6 +1070,28 @@ bool StereoViewWidget::saveCutout(const QString &file, const QImage &left, const
     p.drawImage(px+left.width()+gap, py, cutoutEye(right, points, true, rr, background, color, completeOpening));
     p.end(); return result.save(file);
 }
+namespace {
+class SelectionEdgeCommand : public QUndoCommand {
+    StereoViewWidget *view;bool beforeEnabled,afterEnabled;int beforeWidth,beforeAmount,afterWidth,afterAmount;
+public:
+    SelectionEdgeCommand(StereoViewWidget *v,bool e,int w,int a):view(v),beforeEnabled(v->selectionEdgeBlurEnabled()),afterEnabled(e),beforeWidth(v->selectionEdgeWidth()),beforeAmount(v->selectionEdgeAmount()),afterWidth(w),afterAmount(a){setText(QObject::tr("Change selection edge blur"));}
+    void undo()override{view->applySelectionEdgeBlur(beforeEnabled,beforeWidth,beforeAmount);}
+    void redo()override{view->applySelectionEdgeBlur(afterEnabled,afterWidth,afterAmount);}
+    int id()const override{return 923;}
+    bool mergeWith(const QUndoCommand *command)override{auto next=dynamic_cast<const SelectionEdgeCommand*>(command);if(!next||next->view!=view)return false;afterEnabled=next->afterEnabled;afterWidth=next->afterWidth;afterAmount=next->afterAmount;return true;}
+};
+}
+void StereoViewWidget::setSelectionEdgeBlur(bool enabled,int width,int amount) {
+    width=qBound(1,width,100);amount=qBound(0,amount,100);
+    if(enabled==m_edgeBlur && width==m_edgeWidth && amount==m_edgeAmount)return;
+    if(isImageLoaded())m_undoStack->push(new SelectionEdgeCommand(this,enabled,width,amount));
+    else applySelectionEdgeBlur(enabled,width,amount);
+}
+void StereoViewWidget::applySelectionEdgeBlur(bool enabled,int width,int amount) {
+    m_edgeBlur=enabled;m_edgeWidth=width;m_edgeAmount=amount;
+    emit selectionEdgeBlurChanged();
+    updateAnaglyphIfActive();update();if(m_autoSave && isImageLoaded())saveProject();
+}
 void StereoViewWidget::brushAt(const QPoint &pos) {
     QRect l,r; float scale; calculateLayout(l,r,scale);
     bool right = m_brushRight;
@@ -1072,6 +1104,17 @@ void StereoViewWidget::brushAt(const QPoint &pos) {
     if (m_brushMode>=4) p.setClipRect(right ? m_smartRegionRight : m_smartRegionLeft);
     const QColor strokeColor = m_brushMode == 5 ? QColor(255,0,0) : m_brushMode >= 4 ? QColor(0,255,0) : QColor(Qt::white);
     p.setCompositionMode((m_brushMode==2 || m_brushMode==6) ? QPainter::CompositionMode_Clear : QPainter::CompositionMode_SourceOver);
+    if(m_softBrush && (m_brushMode==1 || m_brushMode==2)) {
+        if(m_brushMode==2)p.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+        p.setPen(Qt::NoPen);
+        QPointF start=m_hasBrushPoint ? m_lastBrushPoint : ip;
+        int steps=qMax(1,int(QLineF(start,ip).length()/qMax(1.0,m_brushSize/12.0)));
+        for(int i=1;i<=steps;++i){QPointF center=start+(ip-start)*(double(i)/steps);
+            QRadialGradient gradient(center,m_brushSize/2.0);gradient.setColorAt(0,Qt::white);gradient.setColorAt(0.4,Qt::white);gradient.setColorAt(1,Qt::transparent);
+            p.setBrush(gradient);p.drawEllipse(center,m_brushSize/2.0,m_brushSize/2.0);
+        }
+        p.end();m_lastBrushPoint=ip;m_hasBrushPoint=true;update();return;
+    }
     p.setPen(QPen(strokeColor, m_brushSize, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.drawLine(m_hasBrushPoint ? m_lastBrushPoint : ip, ip);
     p.setPen(Qt::NoPen); p.setBrush(strokeColor);
@@ -1080,6 +1123,7 @@ void StereoViewWidget::brushAt(const QPoint &pos) {
 }
 
 void StereoViewWidget::loadBrushSettings(const QJsonObject &obj) {
+    m_edgeBlur=obj["selectionEdgeBlur"].toBool(false);m_edgeWidth=qBound(1,obj["selectionEdgeWidth"].toInt(3),100);m_edgeAmount=qBound(0,obj["selectionEdgeAmount"].toInt(100),100);
     m_processor.setStereoWindowOffset(obj["stereoWindowOffset"].toInt(0));
     const auto frame=obj["pictureFrame"].toObject();
     m_textObjects.clear();m_textKeyLeft.clear();m_textKeyRight.clear();m_textCacheLeft=QImage();m_textCacheRight=QImage();m_pictureFrame=PictureFrameSettings{};
@@ -1226,6 +1270,7 @@ bool StereoViewWidget::loadImage(const QString &fileName)
         m_completedLeft=QPainterPath(); m_completedRight=QPainterPath(); m_lassoSubtract=false;
         m_smartHintsLeft=QImage(); m_smartHintsRight=QImage(); m_smartRegionLeft=QRect(); m_smartRegionRight=QRect(); m_smartRight=false; ++m_smartRevision;
         m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = false; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 4; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
+        m_edgeBlur=false;m_edgeWidth=3;m_edgeAmount=100;
         emit brushSettingsLoaded(0, 0);
         m_imagePath = fileName;
         m_panOffset = QPointF(0, 0);
@@ -1294,6 +1339,7 @@ bool StereoViewWidget::saveProject()
     QJsonObject obj; 
     obj["selectionObjects"]=selectionObjectsJson();
     obj["brushVersion"] = 5;
+    obj["selectionEdgeBlur"]=m_edgeBlur;obj["selectionEdgeWidth"]=m_edgeWidth;obj["selectionEdgeAmount"]=m_edgeAmount;
     obj["stereoWindowOffset"] = stereoWindowOffset();
     obj["pictureFrame"] = QJsonObject{{"enabled",m_pictureFrame.enabled},{"width",m_pictureFrame.width},
         {"style",m_pictureFrame.style},{"color",m_pictureFrame.color.name(QColor::HexArgb)},

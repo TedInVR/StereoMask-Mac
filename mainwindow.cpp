@@ -1,4 +1,14 @@
 #include <QComboBox>
+#include <QCheckBox>
+#include <QGridLayout>
+#include <QRadialGradient>
+#include <QHBoxLayout>
+#include <QApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QLineEdit>
+#include "exportoptions.h"
 #include "stereowindowview.h"
 #include "updatechecker.h"
 #include "appversion.h"
@@ -168,7 +178,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R22 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R23 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -193,6 +203,8 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     m_settings.load();
+    setAcceptDrops(true);
+    qApp->installEventFilter(this);
     m_updateChecker = new UpdateChecker(this);
     m_exportWatcher = new QFutureWatcher<bool>(this);
     m_viewWidget = new StereoViewWidget(this);
@@ -214,7 +226,7 @@ MainWindow::MainWindow(QWidget *parent)
         else if (newer) text = tr("A newer StereoMask Mac version is available.\n\nInstalled: %1\nAvailable: %2\n\n%3")
             .arg(STEREOMASK_VERSION, info.version, info.notes);
         else text = tr("You’re up to date.\n\nInstalled version: %1\nLatest published version: %2").arg(STEREOMASK_VERSION, info.version);
-        if (newer && info.packageType == "source") text += tr("\n\nThis is a source download that must be built on your Mac.");
+        if (newer && info.packageType == "source") text += tr("\n\nWith Automatic Updates enabled and the background updater installed, this update will build and install after you close StereoMask (within 15 minutes while your Mac is awake and online). Otherwise use the existing update command.");
         QMessageBox dialog(error.isEmpty() ? QMessageBox::Information : QMessageBox::Warning,
             tr("Check for Updates"), text, QMessageBox::NoButton, this);
         dialog.setTextFormat(Qt::PlainText);
@@ -229,7 +241,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask Mac R22 (%1)").arg(STEREOMASK_VERSION));
+    setWindowTitle(tr("StereoMask Mac R23 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -266,9 +278,9 @@ void MainWindow::setupConnections()
         bool exported = m_exportWatcher->result();
         m_exportProgress.reset();
         if (exported) {
-            statusBar()->showMessage(tr("Image exported to %1").arg(QFileInfo(fileName).fileName()), 5000);
+            statusBar()->showMessage(tr("Exported %1 output(s)").arg(fileName.split("\n").size()), 5000);
         } else {
-            QMessageBox::critical(this, tr("Export Failed"), tr("Could not export image to %1.").arg(fileName));
+            QMessageBox::critical(this, tr("Export Failed"), tr("One or more outputs could not be saved. Check the destination and available space. Some files may have been exported:\n%1").arg(fileName));
             statusBar()->showMessage(tr("Export failed"), 5000);
         }
     });
@@ -291,6 +303,14 @@ void MainWindow::createMenus()
     closeProjectAction->setObjectName("closeProjectAction");
     fileMenu->addAction(tr("&Save Project"), QKeySequence::Save, this, &MainWindow::saveProject);
     fileMenu->addAction(tr("&Export Image..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this, &MainWindow::exportImage);
+    fileMenu->addAction(tr("Export Preferences…"),this,&MainWindow::showExportPreferences);
+    auto autoUpdates=fileMenu->addAction(tr("Automatic Updates"));autoUpdates->setObjectName("automaticUpdatesAction");autoUpdates->setCheckable(true);
+    const QString updaterPrefs=QDir::homePath()+"/Library/Application Support/StereoMask Updates/preferences.json";
+    QFile preferenceFile(updaterPrefs);bool enabled=true;if(preferenceFile.open(QIODevice::ReadOnly))enabled=QJsonDocument::fromJson(preferenceFile.readAll()).object().value("enabled").toBool(true);autoUpdates->setChecked(enabled);
+    connect(autoUpdates,&QAction::toggled,this,[this,updaterPrefs,autoUpdates](bool enabled){
+        QDir().mkpath(QFileInfo(updaterPrefs).absolutePath());QSaveFile file(updaterPrefs);QJsonObject object;object["enabled"]=enabled;
+        if(!file.open(QIODevice::WriteOnly)||file.write(QJsonDocument(object).toJson())<0||!file.commit()){QSignalBlocker block(autoUpdates);autoUpdates->setChecked(!enabled);QMessageBox::warning(this,tr("Automatic Updates"),tr("Could not save the update preference."));}
+    });
     auto quitAction=new QAction(tr("Quit StereoMask"),this);quitAction->setShortcut(QKeySequence::Quit);addAction(quitAction);connect(quitAction,&QAction::triggered,this,&QWidget::close);
 
 
@@ -822,9 +842,23 @@ void MainWindow::createToolbar()
     brushMode->addItem(tr("Fuzzy Select region"),9);
     brushMode->addItem(tr("Select by color threshold"),10);
     brushBar->addWidget(brushMode);
-    brushBar->addWidget(new QLabel(tr(" Size: ")));
+    auto brushRow=new QWidget;auto brushLayout=new QHBoxLayout(brushRow);brushLayout->setContentsMargins(0,0,0,0);
+    brushLayout->addWidget(new QLabel(tr("Size:")));
     QSpinBox *brushSize = new QSpinBox; brushSize->setRange(1, 1000); brushSize->setValue(40);
-    brushBar->addWidget(brushSize);
+    brushSize->setMaximumWidth(60);brushLayout->addWidget(brushSize);
+    auto brushEdges=new QActionGroup(this);brushEdges->setExclusive(true);
+    for(bool soft:{false,true}) {
+        QPixmap symbol(24,24);symbol.fill(Qt::transparent);QPainter painter(&symbol);painter.setRenderHint(QPainter::Antialiasing);
+        if(soft){QRadialGradient gradient(12,12,10);gradient.setColorAt(0,Qt::black);gradient.setColorAt(1,Qt::transparent);painter.setBrush(gradient);}
+        else painter.setBrush(Qt::black);
+        painter.setPen(Qt::NoPen);painter.drawEllipse(QRectF(2,2,20,20));painter.end();
+        auto action=new QAction(QIcon(symbol),soft?tr("Soft Brush"):tr("Hard Brush"),brushEdges);
+        action->setObjectName(soft?"softBrushAction":"hardBrushAction");action->setCheckable(true);action->setChecked(!soft);
+        auto button=new QToolButton;button->setDefaultAction(action);button->setToolButtonStyle(Qt::ToolButtonIconOnly);brushLayout->addWidget(button);
+        connect(action,&QAction::triggered,this,[this,soft]{m_viewWidget->setSoftBrush(soft);});
+        connect(brushMode,QOverload<int>::of(&QComboBox::currentIndexChanged),button,[button,brushMode]{button->setEnabled(brushMode->currentData().toInt()==1 || brushMode->currentData().toInt()==2);});
+    }
+    brushBar->addWidget(brushRow);
     brushBar->addWidget(new QLabel(tr(" Color tolerance: ")));
     QSpinBox *colorTolerance=new QSpinBox;colorTolerance->setObjectName("colorSelectionTolerance");
     colorTolerance->setRange(0,255);colorTolerance->setValue(m_viewWidget->colorSelectionTolerance());
@@ -837,6 +871,26 @@ void MainWindow::createToolbar()
     brushBar->addWidget(brushBackground);
     brushBackground->addItem(tr("Choose Solid Color..."));
     brushBackground->addItem(tr("Match preview"));
+    auto edgeBlur=new QCheckBox(tr("Enable Edge Blur"));edgeBlur->setObjectName("edgeBlurEnabled");brushBar->addWidget(edgeBlur);
+    auto edgeWidth=new QSlider(Qt::Horizontal);edgeWidth->setObjectName("edgeBlurWidth");edgeWidth->setRange(1,100);edgeWidth->setValue(3);
+    auto widthLabel=new QLabel(tr("Edge Width: 3 px"));brushBar->addWidget(widthLabel);brushBar->addWidget(edgeWidth);
+    auto edgeAmount=new QSlider(Qt::Horizontal);edgeAmount->setObjectName("edgeBlurAmount");edgeAmount->setRange(0,100);edgeAmount->setValue(100);
+    auto amountLabel=new QLabel(tr("Blur Amount: 100%"));brushBar->addWidget(amountLabel);brushBar->addWidget(edgeAmount);
+    auto applyEdge=[this,edgeBlur,edgeWidth,edgeAmount,widthLabel,amountLabel]{
+        widthLabel->setText(tr("Edge Width: %1 px").arg(edgeWidth->value()));amountLabel->setText(tr("Blur Amount: %1%").arg(edgeAmount->value()));
+        edgeWidth->setEnabled(edgeBlur->isChecked());edgeAmount->setEnabled(edgeBlur->isChecked());
+        m_viewWidget->setSelectionEdgeBlur(edgeBlur->isChecked(),edgeWidth->value(),edgeAmount->value());
+    };
+    edgeWidth->setEnabled(false);edgeAmount->setEnabled(false);
+    connect(edgeBlur,&QCheckBox::toggled,this,applyEdge);connect(edgeWidth,&QSlider::valueChanged,this,applyEdge);connect(edgeAmount,&QSlider::valueChanged,this,applyEdge);
+    auto syncEdges=[this,edgeBlur,edgeWidth,edgeAmount,widthLabel,amountLabel]{
+        QSignalBlocker a(edgeBlur),b(edgeWidth),c(edgeAmount);
+        edgeBlur->setChecked(m_viewWidget->selectionEdgeBlurEnabled());edgeWidth->setValue(m_viewWidget->selectionEdgeWidth());edgeAmount->setValue(m_viewWidget->selectionEdgeAmount());
+        edgeWidth->setEnabled(edgeBlur->isChecked());edgeAmount->setEnabled(edgeBlur->isChecked());
+        widthLabel->setText(tr("Edge Width: %1 px").arg(edgeWidth->value()));amountLabel->setText(tr("Blur Amount: %1%").arg(edgeAmount->value()));
+    };
+    connect(m_viewWidget,&StereoViewWidget::brushSettingsLoaded,this,[syncEdges](int,int){syncEdges();});
+    connect(m_viewWidget,&StereoViewWidget::selectionEdgeBlurChanged,this,syncEdges);
     brushBackground->setObjectName("exportBackgroundCombo");
     brushBackground->setCurrentIndex(m_viewWidget->cutoutBackground());
     brushBackground->setToolTip(tr("Match preview exports mask color and opacity. Transparent PNG and solid backgrounds export a cutout instead."));
@@ -954,6 +1008,7 @@ void MainWindow::createToolbar()
     });
 
     QAction *maskPreview = addToolAction(maskBar, customIcon("autoMask"), tr("Preview Result"), tr("Preview the selected export appearance, including ordered foreground selections. Match preview uses mask color and opacity; cutout modes use their selected background."));
+    maskPreview->setObjectName("previewResultAction");
     maskPreview->setCheckable(true);
     maskPreview->setChecked(m_viewWidget->maskPreviewEnabled());
     connect(maskPreview, &QAction::toggled, m_viewWidget, &StereoViewWidget::setMaskPreviewEnabled);
@@ -1200,6 +1255,13 @@ void MainWindow::createToolbar()
         auto scroll=new QScrollArea(drawer);scroll->setWidgetResizable(true);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setFrameShape(QFrame::NoFrame);
         auto page=new QWidget(scroll);auto pageLayout=new QVBoxLayout(page);pageLayout->setContentsMargins(1,4,1,4);pageLayout->setSpacing(8);
         page->setStyleSheet(drawerButtonStyle);
+        if(i!=0 && i!=6) {
+            auto previewButton=new QToolButton(page);
+            previewButton->setObjectName(QString("toolPreview%1").arg(i));
+            previewButton->setDefaultAction(maskPreview);
+            previewButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            pageLayout->addWidget(previewButton);
+        }
         for(auto row:rows) {
             row->setParent(page);row->setOrientation(Qt::Vertical);row->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
             row->setFixedWidth(168);row->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);pageLayout->addWidget(row,0,Qt::AlignLeft);row->show();
@@ -1471,7 +1533,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R22 (%1)</h2>"
+        tr("<h2>StereoMask Mac R23 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
@@ -1568,39 +1630,53 @@ void MainWindow::exportImage()
         return;
     }
 
+    QDialog dialog(this);dialog.setObjectName("exportOptionsDialog");dialog.setWindowTitle(tr("Export Image"));dialog.resize(840,520);
+    auto layout=new QVBoxLayout(&dialog);auto form=new QFormLayout;layout->addLayout(form);
     QFileInfo info(m_viewWidget->imagePath());
-    QString defaultName = info.absolutePath() + "/" + info.completeBaseName() + "_masked.png";
-    QString fileName = QFileDialog::getSaveFileName(this, tr("Export Image"), defaultName, tr("Images (*.png *.jpg)"));
-    if (!fileName.isEmpty()) {
-        m_exportProgress=std::make_unique<OperationProgress>(this,tr("StereoMask — Export image"),tr("Rendering the full-resolution left eye…"));
-        QImage left = m_viewWidget->exportEye(false);
-        m_exportProgress->setStage(tr("Rendering the full-resolution right eye…"));
-        QImage right = m_viewWidget->exportEye(true);
-        QVector<MaskPoint> points = m_viewWidget->points();
-        QColor maskColor = m_viewWidget->maskColor();
-        float opacity = m_viewWidget->maskOpacity();
-        int padx = m_viewWidget->padx();
-        int pady = m_viewWidget->pady();
-        QColor bgColor = m_viewWidget->bgColor();
-        int interleavingSpace = m_viewWidget->interleavingSpace();
-        int featherAmount = m_viewWidget->featherAmount();
-        bool cutout = m_viewWidget->cutoutEnabled();
-        int cutoutBackground = m_viewWidget->cutoutBackground();
-        QColor cutoutColor = m_viewWidget->cutoutColor();
-        const int previewFeather=(!cutout || cutoutBackground==4) && m_viewWidget->previewFeatherEnabled() ? featherAmount : 0;
-        QImage revealLeft = m_viewWidget->openingMask(false,previewFeather), revealRight = m_viewWidget->openingMask(true,previewFeather);
-        if (cutout && cutoutBackground == 0 && !fileName.endsWith(".png", Qt::CaseInsensitive)) {
-            m_exportProgress.reset();
-            QMessageBox::information(this, tr("Transparent export"), tr("Choose a PNG filename to preserve transparency."));
-            return;
-        }
-        m_exportProgress->setStage(tr("Encoding and writing the exported image…"));
-        m_exportWatcher->setProperty("fileName", fileName);
-        m_exportWatcher->setFuture(QtConcurrent::run([=]() {
-            const QColor padding=(!cutout || cutoutBackground==4) ? bgColor : cutoutBackground==0 ? QColor(Qt::transparent) : cutoutBackground==1 ? QColor(Qt::black) : cutoutBackground==2 ? QColor(Qt::white) : cutoutColor;
-            return StereoViewWidget::saveComposedPair(fileName,left,right,padx,pady,interleavingSpace,padding);
-        }));
-    }
+    auto name=new QLineEdit(info.completeBaseName()+"_masked");name->setObjectName("exportBaseName");form->addRow(tr("Save As:"),name);
+    auto fullName=new QLabel(name->text());fullName->setWordWrap(true);fullName->setTextFormat(Qt::PlainText);fullName->setTextInteractionFlags(Qt::TextSelectableByMouse);form->addRow(tr("Full name:"),fullName);
+    connect(name,&QLineEdit::textChanged,fullName,&QLabel::setText);
+    auto folder=new QLineEdit(info.absolutePath());auto browse=new QPushButton(tr("Choose Folder…"));form->addRow(tr("Folder:"),folder);form->addRow(browse);
+    connect(browse,&QPushButton::clicked,&dialog,[&]{auto path=QFileDialog::getExistingDirectory(&dialog,tr("Export Folder"),folder->text());if(!path.isEmpty())folder->setText(path);});
+    auto format=new QComboBox;format->addItems({"PNG","JPEG"});form->addRow(tr("File format:"),format);
+    auto defaults=new QSettings;int flags=defaults->value("export/defaultOutputs",1).toInt()&127;delete defaults;if(!flags)flags=1;
+    QList<QCheckBox*> choices;auto labels=ExportOptions::labels();
+    auto grid=new QGridLayout;layout->addLayout(grid);
+    for(int i=0;i<labels.size();++i){auto check=new QCheckBox(labels[i]);check->setObjectName(QString("exportMode%1").arg(i));check->setChecked(flags&(1<<i));grid->addWidget(check,i/2,i%2);choices.append(check);}
+    auto preferences=new QPushButton(tr("Export Preferences…"));layout->addWidget(preferences);connect(preferences,&QPushButton::clicked,this,&MainWindow::showExportPreferences);
+    layout->addStretch();
+    auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);
+    QStringList paths;QList<int> modes;
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{
+        paths.clear();modes.clear();QString base=name->text().trimmed();
+        if(base.endsWith(".png",Qt::CaseInsensitive))base.chop(4);else if(base.endsWith(".jpg",Qt::CaseInsensitive))base.chop(4);else if(base.endsWith(".jpeg",Qt::CaseInsensitive))base.chop(5);
+        if(base.isEmpty()||base.contains('/')||base.contains('\\')||!QDir(folder->text()).exists()){QMessageBox::warning(&dialog,tr("Export"),tr("Enter a filename and an existing destination folder."));return;}
+        if(format->currentIndex()==1 && m_viewWidget->cutoutBackground()==0){QMessageBox::warning(&dialog,tr("Transparency"),tr("Choose PNG to retain the transparent background."));return;}
+        QStringList existing;
+        for(int i=0;i<choices.size();++i)if(choices[i]->isChecked()){QString path=QDir(folder->text()).filePath(base+"_"+ExportOptions::suffixes()[i]+(format->currentIndex()==0?".png":".jpg"));paths.append(path);modes.append(i);if(QFile::exists(path))existing.append(QFileInfo(path).fileName());}
+        if(paths.isEmpty()){QMessageBox::warning(&dialog,tr("Export"),tr("Select at least one output."));return;}
+        if(!existing.isEmpty() && QMessageBox::question(&dialog,tr("Replace files?"),tr("Replace these existing files?\n%1").arg(existing.join("\n")),QMessageBox::Yes|QMessageBox::No,QMessageBox::No)!=QMessageBox::Yes)return;
+        dialog.accept();
+    });
+    if(dialog.exec()!=QDialog::Accepted)return;
+    m_exportProgress=std::make_unique<OperationProgress>(this,tr("StereoMask — Export"),tr("Rendering selected outputs…"));
+    QImage left=m_viewWidget->exportEye(false),right=m_viewWidget->exportEye(true);
+    const int px=m_viewWidget->padx(),py=m_viewWidget->pady(),gap=m_viewWidget->interleavingSpace();
+    const QColor background=m_viewWidget->cutoutBackground()==0?QColor(Qt::transparent):m_viewWidget->cutoutBackground()==1?QColor(Qt::black):m_viewWidget->cutoutBackground()==2?QColor(Qt::white):m_viewWidget->cutoutBackground()==3?m_viewWidget->cutoutColor():m_viewWidget->bgColor();
+    m_exportWatcher->setProperty("fileName",paths.join("\n"));
+    m_exportWatcher->setFuture(QtConcurrent::run([left,right,paths,modes,px,py,gap,background]{
+        bool success=true;
+        for(int i=0;i<paths.size();++i){QImage output;
+            if(modes[i]<2){ // retain existing padding and gap behavior for both SBS orders
+                const QImage a=modes[i]==0?left:right,b=modes[i]==0?right:left;
+                output=QImage(a.width()+b.width()+2*px+gap,a.height()+2*py,QImage::Format_ARGB32_Premultiplied);output.fill(background);
+                QPainter p(&output);p.drawImage(px,py,a);p.drawImage(a.width()+px+gap,py,b);
+            }else {auto image=ExportOptions::output(left,right,modes[i]);output=QImage(image.width()+2*px,image.height()+2*py,QImage::Format_ARGB32_Premultiplied);output.fill(background);QPainter p(&output);p.drawImage(px,py,image);}
+            QSaveFile file(paths[i]);const char *format=paths[i].endsWith(".png")?"PNG":"JPEG";
+            if(!file.open(QIODevice::WriteOnly)||!output.save(&file,format)||!file.commit())success=false;
+        }return success;
+    }));
 }
 
 void MainWindow::updatePointDisparity(int value)
@@ -1804,4 +1880,36 @@ void MainWindow::adjustPictureFrame() {
     auto buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
     if(dialog.exec()==QDialog::Accepted){settings.enabled=enabled->isChecked();settings.width=width->value();settings.style=style->currentIndex();settings.shadowEnabled=shadow->isChecked();settings.shadowOpacity=opacity->value();settings.shadowDistance=distance->value();settings.shadowAngle=angle->value();settings.shadowBlur=blur->value();settings.shadowSpread=spread->value();m_viewWidget->setPictureFrameSettings(settings);}
+}
+
+void MainWindow::showExportPreferences(){
+ QDialog dialog(this);dialog.setWindowTitle(tr("Export Preferences"));auto layout=new QVBoxLayout(&dialog);
+ layout->addWidget(new QLabel(tr("Choose the outputs checked whenever Export opens.")));
+ QSettings prefs;int flags=prefs.value("export/defaultOutputs",1).toInt()&127;if(!flags)flags=1;QList<QCheckBox*> checks;
+ const auto labels=ExportOptions::labels();for(int i=0;i<labels.size();++i){auto check=new QCheckBox(labels[i]);check->setChecked(flags&(1<<i));layout->addWidget(check);checks.append(check);}
+ auto reset=new QPushButton(tr("Restore Parallel Only"));layout->addWidget(reset);connect(reset,&QPushButton::clicked,&dialog,[checks]{for(int i=0;i<checks.size();++i)checks[i]->setChecked(i==0);});
+ auto buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+ connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{int flags=0;for(int i=0;i<checks.size();++i)if(checks[i]->isChecked())flags|=1<<i;if(!flags){QMessageBox::warning(&dialog,tr("Export Preferences"),tr("Select at least one output."));return;}prefs.setValue("export/defaultOutputs",flags);dialog.accept();});dialog.exec();
+}
+
+bool MainWindow::eventFilter(QObject *target,QEvent *event){
+ auto widget=qobject_cast<QWidget*>(target);
+ if(!widget || (widget!=this && !isAncestorOf(widget)) || (QApplication::activeModalWidget() && QApplication::activeModalWidget()!=this))return QMainWindow::eventFilter(target,event);
+ if(event->type()==QEvent::DragEnter || event->type()==QEvent::DragMove || event->type()==QEvent::Drop){
+    auto drop=static_cast<QDropEvent*>(event);const auto urls=drop->mimeData()->urls();
+    if(urls.size()!=1 || !urls.first().isLocalFile())return false;
+    const auto path=urls.first().toLocalFile();const auto suffix=QFileInfo(path).suffix().toLower();
+    if(!QStringList{"png","jpg","jpeg","bmp","tif","tiff","webp","jps","mpo"}.contains(suffix))return false;
+    drop->acceptProposedAction();if(event->type()!=QEvent::Drop)return true;
+    if(m_exportWatcher->isRunning()){QMessageBox::information(this,tr("Please wait"),tr("Wait for export to finish before opening another image."));return true;}
+    if(m_viewWidget->hasLasso()){QMessageBox::information(this,tr("Unfinished outline"),tr("Apply or cancel your outline before opening another image."));return true;}
+    if(m_viewWidget->isImageLoaded() && !m_viewWidget->undoStack()->isClean()){
+        auto answer=QMessageBox::question(this,tr("Open dropped image"),tr("Save your current project before opening the dropped image?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);
+        if(answer==QMessageBox::Cancel)return true;
+        if(answer==QMessageBox::Save && !m_viewWidget->saveProject()){QMessageBox::warning(this,tr("Save failed"),tr("Your current project remains open."));return true;}
+    }
+    if(m_viewWidget->loadImage(path)){m_settings.lastFolder=QFileInfo(path).absolutePath();m_settings.addRecentFile(path);m_settings.save();updateRecentFileActions();}
+    else QMessageBox::warning(this,tr("Cannot open image"),m_viewWidget->lastError());return true;
+ }
+ return QMainWindow::eventFilter(target,event);
 }

@@ -1,5 +1,6 @@
 #include "stereoviewwidget.h"
 #include "decorations.h"
+#include "exportoptions.h"
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QPainter>
@@ -300,5 +301,32 @@ int main(int argc, char **argv)
     const QString replacement=folder.path()+"/replacement.png";require(source.save(replacement),"save replacement image");
     require(loaded.loadImage(replacement) && loaded.textObjects().isEmpty()
             && loaded.exportEye(false)==loaded.exportEye(false,false),"new image must not retain previous text overlays");
+    {
+        QImage l(4,4,QImage::Format_ARGB32);l.fill(QColor(200,80,30));QImage r(4,4,QImage::Format_ARGB32);r.fill(QColor(20,140,220));
+        require(ExportOptions::output(l,r,0).pixelColor(0,0)==l.pixelColor(0,0),"parallel left order");
+        require(ExportOptions::output(l,r,1).pixelColor(0,0)==r.pixelColor(0,0),"cross-eye right first");
+        require(ExportOptions::output(l,r,2).pixelColor(0,0)==QColor(200,140,220),"color anaglyph channels");
+        require(ExportOptions::output(l,r,3).pixelColor(0,0).red()==qGray(l.pixel(0,0)),"half color red luminance");
+        require(ExportOptions::output(l,r,4).pixelColor(0,0).green()==qGray(r.pixel(0,0)),"gray cyan luminance");
+        require(ExportOptions::output(l,r,5)==l && ExportOptions::output(l,r,6)==r,"individual eye chips");
+        StereoViewWidget edges;edges.setAutoSave(false);require(edges.loadImage(file),"edge fixture");
+        QVector<MaskPoint> frame(4);frame[0].pos={80,80};frame[1].pos={250,80};frame[2].pos={250,200};frame[3].pos={80,200};edges.applyFramePoints(frame);
+        auto state=edges.selectionState();SelectionObject object;object.id="edge";object.name="Edge";object.path.addRect(20,20,30,30);state.objects.append(object);edges.restoreSelectionState(state);
+        const auto hard=edges.openingMask(false);edges.setSelectionEdgeBlur(true,5,100);const auto soft=edges.openingMask(false);
+        require(qAlpha(hard.pixel(18,30))==0 && qAlpha(soft.pixel(18,30))>0,"edge blur softens selection exterior");
+        require(qAlpha(soft.pixel(35,35))==255,"edge blur preserves interior");
+        require(qAlpha(soft.pixel(79,140))==0,"selection blur does not feather basic frame");
+        edges.setSelectionEdgeBlur(true,5,0);require(edges.openingMask(false)==hard,"zero amount leaves exact original");
+        edges.setSelectionEdgeBlur(true,5,60);require(edges.saveProject(),"save edge blur");StereoViewWidget reopened;reopened.setAutoSave(false);require(reopened.loadImage(file),"reopen edge blur");
+        require(reopened.selectionEdgeBlurEnabled() && reopened.selectionEdgeWidth()==5 && reopened.selectionEdgeAmount()==60,"edge settings roundtrip");
+        require(reopened.exportEye(false)==edges.exportEye(false),"edge blur pixels roundtrip");
+        QFile::remove(folder.path()+"/source.msk");
+        auto stroke=[&](bool soft){StereoViewWidget brush;brush.setAutoSave(false);brush.resize(720,240);brush.show();require(brush.loadImage(file),"brush fixture");brush.applyFramePoints(frame);brush.fitView();brush.setMaskPreviewEnabled(false);brush.setBrushMode(1);brush.setBrushSize(40);brush.setSoftBrush(soft);QApplication::processEvents();
+            QPointF center(100,100);QMouseEvent press(QEvent::MouseButtonPress,center,center,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(&brush,&press);
+            QMouseEvent release(QEvent::MouseButtonRelease,center,center,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(&brush,&release);
+            auto mask=brush.revealMask(false);bool fractional=false;for(int y=0;y<mask.height();++y)for(int x=0;x<mask.width();++x){int a=qAlpha(mask.pixel(x,y));if(a>10 && a<240)fractional=true;}
+            require(!mask.isNull(),"brush draws mask");if(soft)require(fractional,"soft brush has feathered alpha");brush.undoStack()->undo();require(brush.selectionObjects().isEmpty(),"soft/hard stroke undo");return mask;};
+        require(stroke(false)!=stroke(true),"hard and soft brushes differ");
+    }
     std::cout << "Shapes, curve splitting, shadow, text, undo, project and PNG export: PASS\n";
 }

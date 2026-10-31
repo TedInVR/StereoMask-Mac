@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-trap 'echo; echo "Build stopped. Send the last error lines to ChatGPT."; read -r -p "Press Return to close." || true' ERR
+trap 'echo; echo "Build stopped. Send the last error lines to ChatGPT."; if [ "${STEREOMASK_BACKGROUND_UPDATE:-0}" != "1" ]; then read -r -p "Press Return to close." || true; fi' ERR
 cd "$(dirname "$0")"
 export PATH="/opt/homebrew/bin:$PATH"
 if /bin/ps -axo comm= | /usr/bin/grep -Eq '/Contents/MacOS/StereoMask$'; then
@@ -9,10 +9,12 @@ if /bin/ps -axo comm= | /usr/bin/grep -Eq '/Contents/MacOS/StereoMask$'; then
 fi
 # Qt plugins need these at deployment time, even when compilation succeeds.
 if [ ! -f /opt/homebrew/opt/openssl@4/lib/libssl.4.dylib ] ||    [ ! -f /opt/homebrew/opt/openssl@4/lib/libcrypto.4.dylib ]; then
+    if [ "${STEREOMASK_BACKGROUND_UPDATE:-0}" = "1" ]; then echo "Missing openssl dependency; update deferred."; exit 1; fi
     brew install openssl@4
     brew link openssl@4
 fi
 if [ ! -f /opt/homebrew/opt/qtsvg/lib/QtSvg.framework/Versions/A/QtSvg ]; then
+    if [ "${STEREOMASK_BACKGROUND_UPDATE:-0}" = "1" ]; then echo "Missing qtsvg dependency; update deferred."; exit 1; fi
     brew install qtsvg
     brew link qtsvg
 fi
@@ -65,6 +67,11 @@ python3 scripts/repair_macos_bundle.py "$STEREOMASK_APP" 2>&1 | tee build-mac-br
 
 python3 scripts/install_macos_app.py "$STEREOMASK_APP" /Applications/StereoMask.app
 STEREOMASK_APP="/Applications/StereoMask.app"
+if [ "${STEREOMASK_BACKGROUND_UPDATE:-0}" = "1" ]; then
+    echo "Background update installed; app remains closed."
+    exit 0
+fi
+python3 scripts/automatic_updates.py --install-agent || echo "Automatic update registration failed; manual updater remains available."
 echo "Packaging verified. Starting the permanent StereoMask Mac…"
 env -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
     "$STEREOMASK_APP/Contents/MacOS/StereoMask" > build-mac-brush/startup.log 2>&1 &
