@@ -316,7 +316,7 @@ private:
     void rebuildLassoSegment(int index);
     void rebuildLassoClosing();
     void removeLassoPoint(int index);
-    int m_brushMode = 0, m_brushSize = 40, m_colorSelectionTolerance = 32, m_cutoutBackground = 4;
+    int m_brushMode = 0, m_brushSize = 40, m_colorSelectionTolerance = 32, m_cutoutBackground = 1;
     bool m_softBrush=false, m_edgeBlur=false;
     int m_edgeWidth=3, m_edgeAmount=100;
     bool m_cutout = false, m_brushing = false, m_brushRight = false;
@@ -395,7 +395,7 @@ private:
     float m_maskOpacity = 0.6f;
     int m_featherAmount = 0;
     bool m_previewFeatherEnabled = false;
-    bool m_maskPreviewEnabled = true;
+    bool m_maskPreviewEnabled = false;
     bool m_cleanPreviewEnabled = false;
     bool m_editingWheelPan = false;
     mutable QByteArray m_exportKeyLeft,m_exportKeyRight;

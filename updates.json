@@ -1,6 +1,6 @@
 {
-  "version": "2.6.9",
+  "version": "2.6.10",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R32: Close short gaps between the foreground selection and the right-eye frame after depth adjustments."
+  "notes": "Mac R33: Start with Preview with Frame Lines off and use Black as the out-of-frame background for new images."
 }

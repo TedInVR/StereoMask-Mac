@@ -693,7 +693,8 @@ int main(int argc,char **argv) {
     require(qAlpha(StereoViewWidget::cutoutEye(exportPhoto,{},false,exportOpening,0,Qt::black,true).pixel(20,20))==0,"transparent cutout export regressed");
     require(StereoViewWidget::cutoutEye(exportPhoto,{},false,exportOpening,1,Qt::black,true).pixelColor(20,20)==QColor(Qt::black),"black cutout export regressed");
     StereoViewWidget exportSettings;exportSettings.setAutoSave(false);
-    require(exportSettings.loadImage(pointsFile) && exportSettings.cutoutBackground()==4,"new image does not default to match preview");
+    require(exportSettings.loadImage(pointsFile) && exportSettings.cutoutEnabled() && exportSettings.cutoutBackground()==1,"new image does not default to a black cutout");
+    exportSettings.setCutoutBackground(4);
     require(exportSettings.saveProject(),"preview export settings save failed");
     StereoViewWidget settingsReload;settingsReload.setAutoSave(false);
     require(settingsReload.loadProject(temp.path()+"/point-edit.msk") && settingsReload.cutoutBackground()==4,"match preview setting not persisted");

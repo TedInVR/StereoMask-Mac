@@ -144,14 +144,14 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
-    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R32 (%1)").arg(STEREOMASK_VERSION))return 67;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R33 (%1)").arg(STEREOMASK_VERSION))return 67;
     {
         QEventLoop wait;
         QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
         bool currentSplash=false;
         for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
             auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
-            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R32 (%1)</h1>").arg(STEREOMASK_VERSION));
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R33 (%1)</h1>").arg(STEREOMASK_VERSION));
             topLevel->close();
         }
         if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
@@ -165,6 +165,7 @@ int main(int argc, char **argv) {
         auto canvas=window.findChild<StereoViewWidget *>();auto button=window.findChild<QToolButton *>("toolPreview5");
         if(!clean || !lines || clean->text()!=QStringLiteral("Preview") || lines->text()!=QStringLiteral("Preview with Frame Lines"))return 120;
         const bool before=canvas->cleanPreviewEnabled();button->click();if(canvas->cleanPreviewEnabled()==before)return 121;button->click();if(canvas->cleanPreviewEnabled()!=before)return 122;
+        if(lines->isChecked() || canvas->maskPreviewEnabled())return 124;
         const bool linesBefore=canvas->maskPreviewEnabled();lines->trigger();if(canvas->maskPreviewEnabled()==linesBefore)return 123;lines->trigger();
     }
     if(!window.findChild<QAction *>("hardBrushAction") || !window.findChild<QAction *>("softBrushAction") || !window.findChild<QCheckBox *>("edgeBlurEnabled"))return 111;

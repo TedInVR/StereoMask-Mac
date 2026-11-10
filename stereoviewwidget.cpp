@@ -1295,11 +1295,11 @@ bool StereoViewWidget::closeProject()
     m_cursorVisible = false;
     m_hasBrushPoint = false;
     m_cutout = false;
-    m_cutoutBackground = 4;
+    m_cutoutBackground = 1;
     m_undoStack->clear();
     setCursor(Qt::ArrowCursor);
     emit selectionObjectsChanged();
-    emit brushSettingsLoaded(0, 4);
+    emit brushSettingsLoaded(0, m_cutoutBackground);
     notifySelectionState();
     notifyMaskState();
     update();
@@ -1333,9 +1333,9 @@ bool StereoViewWidget::loadImage(const QString &fileName)
         emit selectionObjectsChanged();
         m_completedLeft=QPainterPath(); m_completedRight=QPainterPath(); m_lassoSubtract=false;
         m_smartHintsLeft=QImage(); m_smartHintsRight=QImage(); m_smartRegionLeft=QRect(); m_smartRegionRight=QRect(); m_smartRight=false; ++m_smartRevision;
-        m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = false; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 4; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
+        m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = true; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 1; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
         m_edgeBlur=false;m_edgeWidth=3;m_edgeAmount=100;
-        emit brushSettingsLoaded(0, 0);
+        emit brushSettingsLoaded(0, m_cutoutBackground);
         m_imagePath = fileName;
         m_panOffset = QPointF(0, 0);
         
