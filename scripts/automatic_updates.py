@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Per-user, closed-app-only source updater. No network activity while app runs."""
-import argparse
+"""Install source updates while StereoMask is closed."""
 import fcntl
 import json
 import os
@@ -10,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -75,16 +75,16 @@ def install_agent(source):
     subprocess.run(['/bin/launchctl', 'bootstrap', 'gui/' + str(os.getuid()), str(agent)], check=True)
 
 
-def update():
+def update(manual=False):
     if running():
         return
     SUPPORT.mkdir(parents=True, exist_ok=True)
     preference = SUPPORT / 'preferences.json'
-    if preference.exists() and not json.loads(preference.read_text()).get('enabled', True):
+    if not manual and preference.exists() and not json.loads(preference.read_text()).get('enabled', True):
         return
     with (SUPPORT / 'update.lock').open('w') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_EX if manual else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
         if not APP.exists():
@@ -119,12 +119,41 @@ def update():
             print('Installed StereoMask ' + notice['version'] + ' from ' + commit, flush=True)
 
 
+def manual_update(expected):
+    SUPPORT.mkdir(parents=True, exist_ok=True)
+    with (SUPPORT / 'updater.log').open('a') as log:
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
+    deadline = time.monotonic() + 30
+    while running():
+        if time.monotonic() >= deadline:
+            raise RuntimeError('StereoMask did not quit before the update deadline')
+        time.sleep(0.25)
+    try:
+        update(manual=True)
+        with (APP / 'Contents/Info.plist').open('rb') as stream:
+            installed = plistlib.load(stream)['CFBundleShortVersionString']
+        if version(installed) < version(expected):
+            raise RuntimeError('The requested update was not installed')
+    finally:
+        subprocess.run(['/usr/bin/open', str(APP)], check=True)
+
+
+def show_manual_error():
+    subprocess.run(['/usr/bin/osascript', '-e',
+        'display alert "StereoMask update failed" message "See updater.log in Library/Application Support/StereoMask Updates for details." as warning'], check=False)
+
+
 if __name__ == '__main__':
     try:
         if '--install-agent' in sys.argv:
             install_agent(Path(__file__).resolve())
+        elif '--manual' in sys.argv:
+            manual_update(sys.argv[sys.argv.index('--manual') + 1])
         else:
             update()
     except Exception as error:
         print('Update deferred; current app retained: ' + str(error), file=sys.stderr, flush=True)
+        if '--manual' in sys.argv:
+            show_manual_error()
         sys.exit(1)

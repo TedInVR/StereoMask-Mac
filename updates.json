@@ -1,6 +1,6 @@
 {
-  "version": "2.6.2",
+  "version": "2.6.3",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R25: StereoMask uses the supplied mask artwork for the macOS app icon and in-app branding."
+  "notes": "Mac R26: Check for Updates offers Quit and Install Update. StereoMask closes, installs the update, and reopens automatically."
 }

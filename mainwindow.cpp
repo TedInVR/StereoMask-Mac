@@ -34,6 +34,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QCoreApplication>
+#include <QProcess>
 #include <QFile>
 #include <QDir>
 #include <QSaveFile>
@@ -178,7 +179,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R25 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R26 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -226,22 +227,53 @@ MainWindow::MainWindow(QWidget *parent)
         else if (newer) text = tr("A newer StereoMask Mac version is available.\n\nInstalled: %1\nAvailable: %2\n\n%3")
             .arg(STEREOMASK_VERSION, info.version, info.notes);
         else text = tr("You’re up to date.\n\nInstalled version: %1\nLatest published version: %2").arg(STEREOMASK_VERSION, info.version);
-        if (newer && info.packageType == "source") text += tr("\n\nWith Automatic Updates enabled and the background updater installed, this update will build and install after you close StereoMask (within 15 minutes while your Mac is awake and online). Otherwise use the existing update command.");
         QMessageBox dialog(error.isEmpty() ? QMessageBox::Information : QMessageBox::Warning,
             tr("Check for Updates"), text, QMessageBox::NoButton, this);
         dialog.setTextFormat(Qt::PlainText);
-        QPushButton *open = nullptr;
-        if (newer || !error.isEmpty()) open = dialog.addButton(tr("Open GitHub"), QMessageBox::AcceptRole);
+#ifdef Q_OS_MACOS
+        QPushButton *install = nullptr;
+        if (newer && error.isEmpty() && info.packageType == "source")
+            install = dialog.addButton(tr("Quit and Install Update"), QMessageBox::AcceptRole);
+#endif
         dialog.addButton(tr("Close"), QMessageBox::RejectRole);
         dialog.exec();
-        if (open && dialog.clickedButton() == open) {
-            const QUrl url = newer ? info.page : QUrl("https://github.com/TedInVR/StereoMask-Mac");
-            if (!QDesktopServices::openUrl(url)) QMessageBox::information(this, tr("Open GitHub"), tr("Open this address in your browser:\n%1").arg(url.toString()));
+#ifdef Q_OS_MACOS
+        if (install && dialog.clickedButton() == install) {
+            if (m_exportWatcher->isRunning() || m_viewWidget->hasLasso()) {
+                QMessageBox::information(this, tr("Update deferred"),
+                    tr("Finish the export or apply or cancel the current outline before installing."));
+                return;
+            }
+            if (m_viewWidget->isImageLoaded() && !m_viewWidget->undoStack()->isClean()) {
+                const auto answer = QMessageBox::question(this, tr("Save before updating"),
+                    tr("Save your current project before StereoMask quits?"),
+                    QMessageBox::Save | QMessageBox::Cancel, QMessageBox::Save);
+                if (answer != QMessageBox::Save)
+                    return;
+                if (!m_viewWidget->saveProject()) {
+                    QMessageBox::warning(this, tr("Save failed"), tr("Your current project remains open."));
+                    return;
+                }
+            }
+            const QDir executableDir(QCoreApplication::applicationDirPath());
+            const QString helper = executableDir.filePath("../Resources/automatic_updates.py");
+            QString python = "/opt/homebrew/bin/python3";
+            if (!QFileInfo(python).isExecutable())
+                python = "/usr/bin/python3";
+            if (!QFileInfo(helper).isReadable() || !QFileInfo(python).isExecutable()
+                || !QProcess::startDetached(python, {helper, "--manual", info.version})) {
+                QMessageBox::warning(this, tr("Update could not start"),
+                    tr("StereoMask could not launch its updater. Your app remains open."));
+                return;
+            }
+            close();
+            QCoreApplication::quit();
         }
+#endif
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask Mac R25 (%1)").arg(STEREOMASK_VERSION));
+    setWindowTitle(tr("StereoMask Mac R26 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -1533,7 +1565,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R25 (%1)</h2>"
+        tr("<h2>StereoMask Mac R26 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "
