@@ -312,7 +312,7 @@ int main(int argc, char **argv)
         StereoViewWidget edges;edges.setAutoSave(false);require(edges.loadImage(file),"edge fixture");
         QVector<MaskPoint> frame(4);frame[0].pos={80,80};frame[1].pos={250,80};frame[2].pos={250,200};frame[3].pos={80,200};edges.applyFramePoints(frame);
         auto state=edges.selectionState();SelectionObject object;object.id="edge";object.name="Edge";object.path.addRect(20,20,30,30);state.objects.append(object);edges.restoreSelectionState(state);
-        const auto hard=edges.openingMask(false);edges.setSelectionEdgeBlur(true,5,100);const auto soft=edges.openingMask(false);
+        require(edges.selectionEdgeBlurEnabled(),"new images default to Edge Blur");edges.setSelectionEdgeBlur(false,3,100);const auto hard=edges.openingMask(false);edges.setSelectionEdgeBlur(true,5,100);const auto soft=edges.openingMask(false);
         require(qAlpha(hard.pixel(18,30))==0 && qAlpha(soft.pixel(18,30))>0,"edge blur softens selection exterior");
         require(qAlpha(soft.pixel(35,35))==255,"edge blur preserves interior");
         require(qAlpha(soft.pixel(79,140))==0,"selection blur does not feather basic frame");

@@ -1334,7 +1334,7 @@ bool StereoViewWidget::loadImage(const QString &fileName)
         m_completedLeft=QPainterPath(); m_completedRight=QPainterPath(); m_lassoSubtract=false;
         m_smartHintsLeft=QImage(); m_smartHintsRight=QImage(); m_smartRegionLeft=QRect(); m_smartRegionRight=QRect(); m_smartRight=false; ++m_smartRevision;
         m_revealLeft = QImage(); m_revealRight = QImage(); m_cutout = true; m_brushMode = 0; m_pickingColor = false; m_cutoutBackground = 1; m_cutoutColor = Qt::black; setCursor(Qt::ArrowCursor);
-        m_edgeBlur=false;m_edgeWidth=3;m_edgeAmount=100;
+        m_edgeBlur=true;m_edgeWidth=3;m_edgeAmount=100;
         emit brushSettingsLoaded(0, m_cutoutBackground);
         m_imagePath = fileName;
         m_panOffset = QPointF(0, 0);

@@ -144,14 +144,14 @@ int main(int argc, char **argv) {
     BrowserCapture browser;
     QDesktopServices::setUrlHandler("file", &browser, "open");
     MainWindow window;
-    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R33 (%1)").arg(STEREOMASK_VERSION))return 67;
+    if(window.windowTitle()!=QStringLiteral("StereoMask Mac R34 (%1)").arg(STEREOMASK_VERSION))return 67;
     {
         QEventLoop wait;
         QTimer::singleShot(250,&wait,&QEventLoop::quit);wait.exec();
         bool currentSplash=false;
         for(auto topLevel:QApplication::topLevelWidgets())if(topLevel->objectName()=="startupSplash") {
             auto label=topLevel->findChild<QLabel *>("startupVersionLabel");
-            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R33 (%1)</h1>").arg(STEREOMASK_VERSION));
+            currentSplash=label && label->text().contains(QStringLiteral("<h1>StereoMask Mac R34 (%1)</h1>").arg(STEREOMASK_VERSION));
             topLevel->close();
         }
         if(!currentSplash){std::cerr<<"Startup banner does not use the application version\n";return 67;}
@@ -169,6 +169,7 @@ int main(int argc, char **argv) {
         const bool linesBefore=canvas->maskPreviewEnabled();lines->trigger();if(canvas->maskPreviewEnabled()==linesBefore)return 123;lines->trigger();
     }
     if(!window.findChild<QAction *>("hardBrushAction") || !window.findChild<QAction *>("softBrushAction") || !window.findChild<QCheckBox *>("edgeBlurEnabled"))return 111;
+    if(!window.findChild<QAction *>("softBrushAction")->isChecked() || !window.findChild<QCheckBox *>("edgeBlurEnabled")->isChecked())return 125;
     QAction *guide = nullptr;
     bool updates = false;
     for (QAction *menuAction : window.menuBar()->actions()) {

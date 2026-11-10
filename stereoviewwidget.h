@@ -317,7 +317,7 @@ private:
     void rebuildLassoClosing();
     void removeLassoPoint(int index);
     int m_brushMode = 0, m_brushSize = 40, m_colorSelectionTolerance = 32, m_cutoutBackground = 1;
-    bool m_softBrush=false, m_edgeBlur=false;
+    bool m_softBrush=true, m_edgeBlur=true;
     int m_edgeWidth=3, m_edgeAmount=100;
     bool m_cutout = false, m_brushing = false, m_brushRight = false;
     QImage m_revealLeft, m_revealRight, m_beforeStroke;
