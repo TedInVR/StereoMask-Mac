@@ -1,6 +1,6 @@
 {
-  "version": "2.6.8",
+  "version": "2.6.9",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R31: Preview applies a closed lasso in either eye, and the frame seam repair works with Edge Blur enabled."
+  "notes": "Mac R32: Close short gaps between the foreground selection and the right-eye frame after depth adjustments."
 }

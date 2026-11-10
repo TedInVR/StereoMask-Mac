@@ -676,12 +676,12 @@ QImage StereoViewWidget::exportEye(bool right, bool includeText, bool editor) co
 }
 // Close tiny gaps at the frame join before applying ordered selection edits.
 static void bridgeFrameJoin(QImage &opening, const QImage &foreground,
-                            const QImage &softForeground, int blurWidth)
+                            const QImage &softForeground, int blurWidth, int horizontalShift)
 {
     if (foreground.size() != opening.size()) return;
     const QImage frame = opening;
     const QPoint directions[] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
-    constexpr int maxReach = 4;
+    constexpr int baseReach = 4;
     const QRect bounds = frame.rect();
     for (int y = 0; y < frame.height(); ++y) {
         const auto *row = reinterpret_cast<const QRgb *>(frame.constScanLine(y));
@@ -692,7 +692,8 @@ static void bridgeFrameJoin(QImage &opening, const QImage &foreground,
                 QPoint end = start + step;
                 if (!bounds.contains(end) || qAlpha(frame.pixel(end)) == 255)
                     continue;
-                for (int distance = 1; distance <= maxReach && bounds.contains(end);
+                const int reach = baseReach + (step.x() != 0 ? horizontalShift : 0);
+                for (int distance = 1; distance <= reach && bounds.contains(end);
                      ++distance, end += step) {
                     if (qAlpha(frame.pixel(end)) == 255) break;
                     if (qAlpha(foreground.pixel(end)) != 255) continue;
@@ -735,7 +736,15 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
     if (m_points.size() >= 3 && feather == 0 && !foreground.isNull()) {
         painter.end();
         const int blurWidth = m_edgeBlur && m_edgeAmount > 0 ? m_edgeWidth : 0;
-        bridgeFrameJoin(mask, foreground, soften(foreground), blurWidth);
+        // Right-eye frame points can move away from an existing foreground outline.
+        // Keep the repair local so distant foreground islands remain separate.
+        float maxShift = 0;
+        if (right) {
+            for (const auto &point : m_points)
+                maxShift = qMax(maxShift, qAbs(point.disparity));
+        }
+        const int horizontalShift = qCeil(qMin(maxShift, 16.0f));
+        bridgeFrameJoin(mask, foreground, soften(foreground), blurWidth, horizontalShift);
         painter.begin(&mask);
         painter.setRenderHint(QPainter::Antialiasing);
     }
