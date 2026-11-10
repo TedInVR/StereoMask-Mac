@@ -174,11 +174,11 @@ public:
         fLayout->addLayout(topRow);
 
         QLabel *icon = new QLabel(frame);
-        icon->setPixmap(QIcon(":/app_icon.svg").pixmap(80, 80));
+        icon->setPixmap(QIcon(":/StereoMaskAppIcon.png").pixmap(80, 80));
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R24 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R25 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -214,7 +214,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_viewWidget->setAutoSave(m_settings.autoSave);
     setCentralWidget(m_viewWidget);
 
-    setWindowIcon(QIcon(":/app_icon.svg"));
+    setWindowIcon(QIcon(":/StereoMaskAppIcon.png"));
 
     createMenus();
     createToolbar();
@@ -241,7 +241,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask Mac R24 (%1)").arg(STEREOMASK_VERSION));
+    setWindowTitle(tr("StereoMask Mac R25 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -1533,7 +1533,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R24 (%1)</h2>"
+        tr("<h2>StereoMask Mac R25 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "

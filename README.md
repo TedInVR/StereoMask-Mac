@@ -6,9 +6,9 @@ StereoMask is a collaborative effort between **Subbiah Rathinagiri** and **Theod
 - **Theodore Whitten:** Mac port, editing workflow and foreground-selection improvements, developed with Codex assistance.
 - **Upstream:** [SRathinaGiri/StereoMask](https://github.com/SRathinaGiri/StereoMask).
 
-The original MIT copyright and license are preserved in [LICENSE](LICENSE). Mac R24 / 2.6.1 integrates Subbiah’s Windows v2.4.0–v2.5.0 additions while retaining Mac navigation, updater, support links and installation. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
+The original MIT copyright and license are preserved in [LICENSE](LICENSE). Mac R25 / 2.6.2 integrates Subbiah’s Windows v2.4.0–v2.5.0 additions while retaining Mac navigation, updater, support links and installation. Original creative inspiration: [Bernd Paksa’s Stereomasken](https://www.stereomasken.de/index_en.htm).
 
-## New in R24 / 2.6.1
+## New in R25 / 2.6.2
 
 - Left rail tooltips use plain names: File, View, Adjust Stereo Window, Create Stereo Frame, Edit Stereo Frame, Out-of-Frame, Quick Access, History of Edits and Help.
 - The star opens the Quick Access window directly instead of a dock and second button. Search/add/reorder/save favorites there; double-click a favorite or use Open Selected Command to run it. Original enabled/checked states and submenu behavior are retained. Running closes the window without saving draft list changes; Save commits them.
@@ -17,7 +17,7 @@ The original MIT copyright and license are preserved in [LICENSE](LICENSE). Mac 
 ## New in R21 / 2.5.0
 
 - Left-side toolbox drawers replace stacked toolbar rows, leaving more room for the image. Click an icon to open/close, or drag its title to float/move it. One docked drawer opens at a time; floating drawers remain independent. Mac drawers use 190 logical pixels for readable controls.
-- Quick Access favorites (now a direct window in R24): search/add/remove/reorder or secondary-click a supported button. Original commands retain their states; favorites persist locally.
+- Quick Access favorites (now a direct window in R25): search/add/remove/reorder or secondary-click a supported button. Original commands retain their states; favorites persist locally.
 - Every startup opens File only, with all other drawers closed. Positions and favorites persist. Layout can close all drawers or reset them to the left.
 - View → Show Grid (Command+G) and Grid Settings: line counts, one/two colors and opacity. Source-aligned, pan/zoom aware, hidden in Clean Preview and never exported or saved into projects.
 - Edit Frame → Outline Frame: independent inner/middle/outer bands, widths, colors, source-pixel gap, and preview-background-color tracking. Curves and per-eye depth are respected; preserved foreground covers the outline. Undo/Redo and project saving retain settings. Normal editor visibility is independent of Clean Preview/export. Existing borders/shadows remain independent; the canvas clips all bands.
@@ -79,7 +79,7 @@ No embedded payments, startup requests, ads, editing interruptions or paid app f
 
 ## Build on Apple Silicon
 
-R24 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
+R25 is source code, not a prebuilt download. It targets Apple Silicon (arm64). Intel builds and minimum compatible macOS versions have not been validated.
 
 Install Xcode Command Line Tools and Homebrew, then the build dependencies:
 
@@ -98,7 +98,7 @@ For later updates, run `bash "/Applications/StereoMask Development/UPDATE_STEREO
 From a Git checkout, run `bash BUILD_BRUSH_VERSION.command` in its source directory.
 The script configures CMake, builds, deploys Qt, repairs dependency references, verifies the bundle and ad-hoc signs it. It stops on deployment or startup errors. It stages and verifies the new bundle, replaces `/Applications/StereoMask.app` and launches that permanent copy. A failed install verification restores the previous installed bundle. Keep the same Dock icon. If Applications is not writable, the installer stops and you can use Finder to copy the built app and choose Replace. CMake’s cache is regenerated so a moved development folder does not retain its old location.
 
-### R24 status
+### R25 status
 
 The integration is verified with cross-platform Qt/OpenCV regression checks listed in DEVELOPMENT_LOG.md. Actual Apple Silicon packaging, Finder launch, native font/DPI appearance, secondary-click and physical shortcut delivery need Mac confirmation for this revision. Paired alignment is an estimate; inspect the opposite-eye outline and adjust manually. Smart lasso remains optional.
 
@@ -136,6 +136,6 @@ Theodore requested an optional guided workflow that walks users through stereo-w
 
 Stereo-window offsets and picture-frame settings are Mac project extensions. Windows v2.1.1 and earlier Mac builds ignore them; exchange an adjusted exported pair or keep copies when using older apps.
 
-### R24 editing and export improvements
+### R25 editing and export improvements
 
 Preview (the clean, unobstructed view) is available in each editing drawer. Preview with Frame Lines remains available separately. Photo drops open directly from the main window. Hard/Soft brushes and selection Edge Blur soften cutout boundaries. Export supports multiple stereo layouts and individual eye chips, readable names and saved defaults (Parallel only initially). File → Export Preferences controls defaults. The next manual update migrates existing installations to the optional closed-app background source updater; see the User Guide for requirements and native verification limits.

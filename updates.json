@@ -1,6 +1,6 @@
 {
-  "version": "2.6.1",
+  "version": "2.6.2",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R24: Preview is now the clean, unobstructed view (F8). Editing-panel Preview buttons use it. The separate option is named Preview with Frame Lines. Both behaviors retained. User Guide and Guided Process wording updated."
+  "notes": "Mac R25: StereoMask uses the supplied mask artwork for the macOS app icon and in-app branding."
 }
