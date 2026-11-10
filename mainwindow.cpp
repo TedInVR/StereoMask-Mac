@@ -179,7 +179,7 @@ public:
         icon->setAlignment(Qt::AlignCenter);
         fLayout->addWidget(icon);
 
-        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R26 (%1)</h1>"
+        QLabel *text = new QLabel(tr("<h1>StereoMask Mac R27 (%1)</h1>"
                                      "<p align='center'><b>Stereomasken creator:</b> Bernd Paksa</p>"
                                      "<p align='center'><b>StereoMask Windows:</b> Subbiah Rathinagiri</p><p align='center'><b>Mac port &amp; editing improvements:</b> Theodore Whitten</p>"
                                      "<p align='center'>Original app: <b>GEMINI CLI</b> and Qt6.<br>Mac improvements: <b>Codex</b> assistance.</p>").arg(STEREOMASK_VERSION), frame);
@@ -273,7 +273,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     statusBar()->showMessage(tr("Ready"));
 
-    setWindowTitle(tr("StereoMask Mac R26 (%1)").arg(STEREOMASK_VERSION));
+    setWindowTitle(tr("StereoMask Mac R27 (%1)").arg(STEREOMASK_VERSION));
     resize(1200, 800);
 
     setupConnections();
@@ -994,7 +994,17 @@ void MainWindow::createToolbar()
     });
     connect(brushMode, QOverload<int>::of(&QComboBox::activated), this, [this, anaglyph, pan, brushMode](int index) {
         const int mode=brushMode->itemData(index).toInt();
-        if (mode) { anaglyph->setChecked(false); pan->setChecked(false);if(auto clean=findChild<QAction *>("cleanPreviewAction"))clean->setChecked(false);for(auto action:findChildren<QAction *>())if(action->objectName()=="previewResultAction")action->setChecked(false); m_viewWidget->setCutoutBackground(m_viewWidget->cutoutBackground()); }
+        if (mode) {
+            anaglyph->setChecked(false);
+            pan->setChecked(false);
+            if (mode != 1 && mode != 2) {
+                if (auto clean = findChild<QAction *>("cleanPreviewAction"))
+                    clean->setChecked(false);
+                if (auto lines = findChild<QAction *>("previewResultAction"))
+                    lines->setChecked(false);
+            }
+            m_viewWidget->setCutoutBackground(m_viewWidget->cutoutBackground());
+        }
         m_viewWidget->setBrushMode(mode);
         const QStringList tips={tr("Edit frame points"), tr("Select Brush: paint areas to preserve outside the frame. [ smaller, ] larger."), tr("Erase Brush: remove preserved areas outside the frame. The frame stays open."),
             tr("Drag a loose box around one leg in one eye; leave background space around it."), tr("Paint a small Keep stroke safely inside the leg, then Find edges."),
@@ -1044,7 +1054,7 @@ void MainWindow::createToolbar()
     maskPreview->setCheckable(true);
     maskPreview->setChecked(m_viewWidget->maskPreviewEnabled());
     connect(maskPreview, &QAction::toggled, m_viewWidget, &StereoViewWidget::setMaskPreviewEnabled);
-    QAction *cleanPreview=addToolAction(maskBar,customIcon("eye"),tr("Preview"),tr("Show the selected export appearance without editing outlines, points or hints (F8). Turn off to resume drawing."));
+    QAction *cleanPreview=addToolAction(maskBar,customIcon("eye"),tr("Preview"),tr("Show the selected export appearance without editing outlines, points or hints (F8). Select and Erase Brush work in side-by-side Preview."));
     cleanPreview->setObjectName("cleanPreviewAction"); cleanPreview->setCheckable(true);
     cleanPreview->setChecked(m_viewWidget->cleanPreviewEnabled()); cleanPreview->setShortcut(Qt::Key_F8);
     connect(cleanPreview,&QAction::toggled,m_viewWidget,&StereoViewWidget::setCleanPreviewEnabled);
@@ -1565,7 +1575,7 @@ void MainWindow::showSupport()
 void MainWindow::showAbout()
 {
     QMessageBox aboutBox(QMessageBox::Information, tr("About StereoMask"),
-        tr("<h2>StereoMask Mac R26 (%1)</h2>"
+        tr("<h2>StereoMask Mac R27 (%1)</h2>"
            "<p>A precision masking tool for side-by-side stereo images.</p>"
            "<p><b>Original Stereomasken creator:</b> Bernd Paksa.</p>"
            "<p>StereoMask is inspired by his Stereomasken program and its creative "

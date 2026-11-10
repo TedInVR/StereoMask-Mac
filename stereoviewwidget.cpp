@@ -647,7 +647,7 @@ QImage StereoViewWidget::exportEye(bool right, bool includeText, bool editor) co
           <<m_pictureFrame.outlineInnerWidth<<m_pictureFrame.outlineMiddleWidth<<m_pictureFrame.outlineOuterWidth
           <<m_pictureFrame.outlineInnerColor<<m_pictureFrame.outlineMiddleColor<<m_pictureFrame.outlineOuterColor
           <<m_pictureFrame.outlineInnerBackground<<m_pictureFrame.outlineMiddleBackground<<m_pictureFrame.outlineOuterBackground
-          <<includeText<<editor
+          <<includeText<<editor<<m_brushing
           <<m_edgeBlur<<m_edgeWidth<<m_edgeAmount<<m_cutout<<m_cutoutBackground<<m_cutoutColor<<m_maskColor<<m_maskOpacity<<m_featherAmount<<m_previewFeatherEnabled;
     if(includeText) for(const auto &text:m_textObjects)stream<<QJsonDocument(textToJson(text)).toJson(QJsonDocument::Compact);
     for (const auto &point:m_points)
@@ -691,7 +691,12 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
     };
     const QImage base=right ? m_baseRevealRight : m_baseRevealLeft;
     if (!base.isNull()) painter.drawImage(0,0,soften(base));
-    for (const auto &object:m_selectionObjects) {
+    const bool liveStroke = m_brushing && right == m_brushRight
+        && (m_brushMode == 1 || m_brushMode == 2);
+    const auto objects = liveStroke
+        ? stateWithRasterChange(right, m_beforeStroke, revealMask(right)).objects
+        : m_selectionObjects;
+    for (const auto &object : objects) {
         if (!object.visible || object.right!=right) continue;
         painter.setCompositionMode(object.subtract ? QPainter::CompositionMode_DestinationOut : QPainter::CompositionMode_SourceOver);
         if(m_edgeBlur && m_edgeAmount>0){
@@ -2415,26 +2420,28 @@ void StereoViewWidget::paintEvent(QPaintEvent *event)
         drawInViewport(vR, m_swapSides ? m_processor.leftImage() : m_processor.rightImage(), !m_swapSides);
     }
 
-    if (m_cleanPreviewEnabled) return;
-    drawAutoMaskDebugOverlay(painter, vL, scale, m_swapSides);
-    if (!m_anaglyphMode) drawAutoMaskDebugOverlay(painter, vR, scale, !m_swapSides);
+    if (!m_cleanPreviewEnabled) {
+        drawAutoMaskDebugOverlay(painter, vL, scale, m_swapSides);
+        if (!m_anaglyphMode) drawAutoMaskDebugOverlay(painter, vR, scale, !m_swapSides);
     
-    if (m_isSelecting && !m_selectionRect.isNull()) { 
-        painter.setPen(QPen(Qt::white, 1, Qt::DashLine)); painter.setBrush(QColor(255, 255, 255, 50)); 
-        painter.drawRect(m_selectionRect); 
-    }
-
-    if (m_isFreehandDrawing && m_freehandPoints.size() > 1) {
-        QPainterPath path;
-        QPointF first = imageToWidget(m_freehandPoints.first(), m_freehandViewport, m_freehandScale);
-        path.moveTo(first);
-        for (int i = 1; i < m_freehandPoints.size(); ++i) {
-            path.lineTo(imageToWidget(m_freehandPoints[i], m_freehandViewport, m_freehandScale));
+        if (m_isSelecting && !m_selectionRect.isNull()) {
+            painter.setPen(QPen(Qt::white, 1, Qt::DashLine)); painter.setBrush(QColor(255, 255, 255, 50));
+            painter.drawRect(m_selectionRect);
         }
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(Qt::cyan, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPath(path);
+
+        if (m_isFreehandDrawing && m_freehandPoints.size() > 1) {
+            QPainterPath path;
+            QPointF first = imageToWidget(m_freehandPoints.first(), m_freehandViewport, m_freehandScale);
+            path.moveTo(first);
+            for (int i = 1; i < m_freehandPoints.size(); ++i) {
+                path.lineTo(imageToWidget(m_freehandPoints[i], m_freehandViewport, m_freehandScale));
+            }
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(QPen(Qt::cyan, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            painter.drawPath(path);
+        }
     }
+    if (m_cleanPreviewEnabled && m_brushMode != 1 && m_brushMode != 2) return;
     if (m_brushMode && m_brushMode != 3 && m_brushMode < 7 && !m_anaglyphMode && !m_pickingColor && m_cursorVisible &&
         (vL.contains(m_brushCursor) || vR.contains(m_brushCursor))) {
         painter.setRenderHint(QPainter::Antialiasing);
@@ -2456,7 +2463,10 @@ void StereoViewWidget::mousePressEvent(QMouseEvent *event)
         m_isPanning=true; m_lastMousePos=event->pos(); setCursor(Qt::ClosedHandCursor); return;
     }
     m_brushCursor = event->pos(); m_cursorVisible = true;
-    if (m_cleanPreviewEnabled) return;
+    const bool previewBrush = (m_brushMode == 1 || m_brushMode == 2)
+        && !m_anaglyphMode && !m_pickingColor && !m_polygonMoveEnabled
+        && event->button() == Qt::LeftButton;
+    if (m_cleanPreviewEnabled && !previewBrush) return;
     if (m_pickingColor && event->button() == Qt::LeftButton) {
         QRect l, r; float scale; calculateLayout(l, r, scale);
         if (m_anaglyphMode || (!l.contains(event->pos()) && !r.contains(event->pos()))) return;

@@ -1,6 +1,6 @@
 {
-  "version": "2.6.3",
+  "version": "2.6.4",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R26: Check for Updates offers Quit and Install Update. StereoMask closes, installs the update, and reopens automatically."
+  "notes": "Mac R27: Use Select Brush and Erase Brush while Preview is on. See strokes as you paint, with frame lines hidden."
 }
