@@ -675,7 +675,8 @@ QImage StereoViewWidget::exportEye(bool right, bool includeText, bool editor) co
     cachedKey=key;return cached;
 }
 // Close tiny gaps at the frame join before applying ordered selection edits.
-static void bridgeFrameJoin(QImage &opening, const QImage &foreground)
+static void bridgeFrameJoin(QImage &opening, const QImage &foreground,
+                            const QImage &softForeground, int blurWidth)
 {
     if (foreground.size() != opening.size()) return;
     const QImage frame = opening;
@@ -695,7 +696,18 @@ static void bridgeFrameJoin(QImage &opening, const QImage &foreground)
                      ++distance, end += step) {
                     if (qAlpha(frame.pixel(end)) == 255) break;
                     if (qAlpha(foreground.pixel(end)) != 255) continue;
-                    for (QPoint gap = start + step; gap != end; gap += step)
+                    QPoint solid = end;
+                    int remaining = blurWidth;
+                    while (remaining > 0 && bounds.contains(solid)
+                           && qAlpha(foreground.pixel(solid)) == 255
+                           && qAlpha(softForeground.pixel(solid)) != 255) {
+                        solid += step;
+                        --remaining;
+                    }
+                    if (!bounds.contains(solid) || qAlpha(foreground.pixel(solid)) != 255
+                        || qAlpha(softForeground.pixel(solid)) != 255)
+                        break;
+                    for (QPoint gap = start + step; gap != solid; gap += step)
                         opening.setPixel(gap, qRgb(255, 255, 255));
                     break;
                 }
@@ -712,14 +724,6 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
     QPainter painter(&mask); painter.setRenderHint(QPainter::Antialiasing);
     if (!m_points.isEmpty())
         drawFeatheredPath(painter,createImageMaskPath(m_points,QRectF(source.rect()),1.0f,right,false),Qt::white,feather);
-    const QImage foreground = revealMask(right);
-    if (m_points.size() >= 3 && feather == 0 && (!m_edgeBlur || m_edgeAmount == 0)
-        && !foreground.isNull()) {
-        painter.end();
-        bridgeFrameJoin(mask, foreground);
-        painter.begin(&mask);
-        painter.setRenderHint(QPainter::Antialiasing);
-    }
     auto soften=[this](QImage original) {
         if(!m_edgeBlur || m_edgeAmount==0 || original.isNull())return original;
         QImage blurred=original;boxBlurAlpha(blurred,m_edgeWidth);
@@ -727,6 +731,14 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
             for(int x=0;x<original.width();++x){int alpha=(qAlpha(dst[x])*(100-m_edgeAmount)+qAlpha(src[x])*m_edgeAmount)/100;dst[x]=qRgba(alpha,alpha,alpha,alpha);}
         }return original;
     };
+    const QImage foreground = revealMask(right);
+    if (m_points.size() >= 3 && feather == 0 && !foreground.isNull()) {
+        painter.end();
+        const int blurWidth = m_edgeBlur && m_edgeAmount > 0 ? m_edgeWidth : 0;
+        bridgeFrameJoin(mask, foreground, soften(foreground), blurWidth);
+        painter.begin(&mask);
+        painter.setRenderHint(QPainter::Antialiasing);
+    }
     const QImage base=right ? m_baseRevealRight : m_baseRevealLeft;
     if (!base.isNull()) painter.drawImage(0,0,soften(base));
     const bool liveStroke = m_brushing && right == m_brushRight

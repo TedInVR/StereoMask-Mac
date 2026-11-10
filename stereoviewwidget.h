@@ -199,7 +199,7 @@ public:
     void setMaskFeather(int amount) { m_featherAmount = amount; updateAnaglyphIfActive(); update(); }
     void setPreviewFeatherEnabled(bool enabled) { m_previewFeatherEnabled = enabled; updateAnaglyphIfActive(); update(); }
     void setMaskPreviewEnabled(bool enabled) { m_maskPreviewEnabled = enabled; updateAnaglyphIfActive(); update(); }
-    void setCleanPreviewEnabled(bool enabled) { m_cleanPreviewEnabled=enabled; updateAnaglyphIfActive(); update(); setFocus(); }
+    void setCleanPreviewEnabled(bool enabled) { if (enabled && m_lassoClosed) finishLasso(); m_cleanPreviewEnabled=enabled; updateAnaglyphIfActive(); update(); setFocus(); }
     bool cleanPreviewEnabled() const { return m_cleanPreviewEnabled; }
     void setPaddingSettings(int px, int py, const QColor &bg, int interleaving) { m_padx = px; m_pady = py; m_bgColor = bg; m_interleavingSpace = interleaving; }
 
