@@ -1,6 +1,6 @@
 {
-  "version": "2.6.5",
+  "version": "2.6.6",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R28: Build native Finder and Dock icons at all standard sizes and refresh macOS registration after installation."
+  "notes": "Mac R29: Close tiny gaps where an out-of-frame selection meets the frame in preview and export."
 }

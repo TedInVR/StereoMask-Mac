@@ -674,6 +674,36 @@ QImage StereoViewWidget::exportEye(bool right, bool includeText, bool editor) co
     }
     cachedKey=key;return cached;
 }
+// Close tiny gaps at the frame join before applying ordered selection edits.
+static void bridgeFrameJoin(QImage &opening, const QImage &foreground)
+{
+    if (foreground.size() != opening.size()) return;
+    const QImage frame = opening;
+    const QPoint directions[] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+    constexpr int maxReach = 4;
+    const QRect bounds = frame.rect();
+    for (int y = 0; y < frame.height(); ++y) {
+        const auto *row = reinterpret_cast<const QRgb *>(frame.constScanLine(y));
+        for (int x = 0; x < frame.width(); ++x) {
+            if (qAlpha(row[x]) != 255) continue;
+            const QPoint start(x, y);
+            for (const QPoint &step : directions) {
+                QPoint end = start + step;
+                if (!bounds.contains(end) || qAlpha(frame.pixel(end)) == 255)
+                    continue;
+                for (int distance = 1; distance <= maxReach && bounds.contains(end);
+                     ++distance, end += step) {
+                    if (qAlpha(frame.pixel(end)) == 255) break;
+                    if (qAlpha(foreground.pixel(end)) != 255) continue;
+                    for (QPoint gap = start + step; gap != end; gap += step)
+                        opening.setPixel(gap, qRgb(255, 255, 255));
+                    break;
+                }
+            }
+        }
+    }
+}
+
 QImage StereoViewWidget::openingMask(bool right, int feather) const {
     const QImage source=right ? m_processor.rightImage() : m_processor.leftImage();
     if (source.isNull()) return {};
@@ -682,6 +712,14 @@ QImage StereoViewWidget::openingMask(bool right, int feather) const {
     QPainter painter(&mask); painter.setRenderHint(QPainter::Antialiasing);
     if (!m_points.isEmpty())
         drawFeatheredPath(painter,createImageMaskPath(m_points,QRectF(source.rect()),1.0f,right,false),Qt::white,feather);
+    const QImage foreground = revealMask(right);
+    if (m_points.size() >= 3 && feather == 0 && (!m_edgeBlur || m_edgeAmount == 0)
+        && !foreground.isNull()) {
+        painter.end();
+        bridgeFrameJoin(mask, foreground);
+        painter.begin(&mask);
+        painter.setRenderHint(QPainter::Antialiasing);
+    }
     auto soften=[this](QImage original) {
         if(!m_edgeBlur || m_edgeAmount==0 || original.isNull())return original;
         QImage blurred=original;boxBlurAlpha(blurred,m_edgeWidth);
