@@ -1,6 +1,6 @@
 {
-  "version": "2.6.6",
+  "version": "2.6.7",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R29: Close tiny gaps where an out-of-frame selection meets the frame in preview and export."
+  "notes": "Mac R30: Round the corners of the StereoMask icon for Finder and the Dock."
 }
