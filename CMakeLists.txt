@@ -77,11 +77,17 @@ if(WIN32)
     target_sources(StereoMask PRIVATE icon.rc)
 endif()
 if(APPLE)
-    set_source_files_properties(StereoMaskAppIcon.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_sources(StereoMask PRIVATE StereoMaskAppIcon.icns)
+    set(stereomask_icon "${CMAKE_CURRENT_BINARY_DIR}/StereoMaskNative.icns")
+    add_custom_command(OUTPUT "${stereomask_icon}"
+        COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_macos_icon.sh"
+            "${CMAKE_CURRENT_SOURCE_DIR}/StereoMaskAppIcon.png" "${stereomask_icon}"
+        DEPENDS StereoMaskAppIcon.png scripts/build_macos_icon.sh
+        VERBATIM)
+    set_source_files_properties("${stereomask_icon}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(StereoMask PRIVATE "${stereomask_icon}")
     set_source_files_properties(scripts/automatic_updates.py PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_sources(StereoMask PRIVATE scripts/automatic_updates.py)
-    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE_ICON_FILE StereoMaskAppIcon.icns)
+    set_target_properties(StereoMask PROPERTIES MACOSX_BUNDLE_ICON_FILE StereoMaskNative.icns)
     enable_language(OBJCXX)
     target_sources(StereoMask PRIVATE appactivation.mm)
     target_link_libraries(StereoMask PRIVATE "-framework AppKit")

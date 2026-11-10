@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stage a verified app before replacing the permanent Applications copy."""
 import argparse
+import os
 import plistlib
 import shutil
 import subprocess
@@ -65,6 +66,13 @@ def main():
     ensure_closed()
     try:
         install(args.source, args.target, before_replace=ensure_closed)
+        try:
+            os.utime(args.target, None)
+            registry = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
+            if registry.is_file():
+                subprocess.run([str(registry), '-f', str(args.target)], check=True, timeout=15)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f'Installed, but macOS registration could not be refreshed: {error}', file=sys.stderr)
     except PermissionError as error:
         raise RuntimeError('Applications is not writable. Install the built app with Finder and choose Replace.') from error
 

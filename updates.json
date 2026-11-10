@@ -1,6 +1,6 @@
 {
-  "version": "2.6.4",
+  "version": "2.6.5",
   "page_url": "https://github.com/TedInVR/StereoMask-Mac",
   "package_type": "source",
-  "notes": "Mac R27: Use Select Brush and Erase Brush while Preview is on. See strokes as you paint, with frame lines hidden."
+  "notes": "Mac R28: Build native Finder and Dock icons at all standard sizes and refresh macOS registration after installation."
 }
